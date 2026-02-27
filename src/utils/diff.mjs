@@ -188,4 +188,32 @@ function myersDiff(oldLines, newLines) {
   return result
 }
 
-export default { generateDiff, formatDiffForTerminal }
+/**
+ * Generate a unified diff between before and after strings.
+ * CC 2.x parity alias — used by permission prompts to show diffs before approval.
+ *
+ * @param {string} filename - File name shown in diff headers
+ * @param {string} before - Original content
+ * @param {string} after - New content
+ * @param {number} context - Number of context lines (default 3)
+ * @returns {Array<{ type, line }>} Diff line objects
+ */
+export function generateUnifiedDiff(filename, before, after, context = 3) {
+  return generateDiff(before, after, filename, context)
+}
+
+/**
+ * Render a diff as ANSI-coloured terminal output.
+ * CC 2.x parity alias for use in permission prompts.
+ * Truncates to at most 50 lines to keep prompts compact.
+ *
+ * @param {Array<{ type, line }>} diff - Output of generateDiff or generateUnifiedDiff
+ * @returns {string} ANSI-coloured string ready for terminal display
+ */
+export function renderDiffColored(diff) {
+  if (!diff || diff.length === 0) return '  (no changes)'
+  const truncated = diff.length > 50 ? [...diff.slice(0, 50), { type: 'header', line: `... (${diff.length - 50} more lines)` }] : diff
+  return formatDiffForTerminal(truncated)
+}
+
+export default { generateDiff, formatDiffForTerminal, generateUnifiedDiff, renderDiffColored }

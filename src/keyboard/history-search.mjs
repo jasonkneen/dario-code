@@ -187,6 +187,21 @@ class HistorySearch {
         this.searchResults.length > 0 ? this.searchResults[this.currentIndex] : null
     }
   }
+
+  /**
+   * Tab completion: find the most recent history entry that starts with `partial`.
+   * (CC 2.1.14 parity — bash history Tab autocomplete)
+   *
+   * @param {string} partial - The current input text to complete
+   * @returns {string|null} The completed command, or null if no match
+   */
+  getTabCompletion(partial) {
+    if (!partial || !partial.trim()) return null
+    for (let i = this.history.length - 1; i >= 0; i--) {
+      if (this.history[i].startsWith(partial)) return this.history[i]
+    }
+    return null
+  }
 }
 
 // Export singleton instance

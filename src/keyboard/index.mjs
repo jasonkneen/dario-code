@@ -18,6 +18,32 @@ class KeyboardManager extends EventEmitter {
     this.searchResults = []
     this.suspendedOperations = []
     this.rl = null
+    // Current input text — updated by callers so Tab completion has context
+    this._currentInput = ''
+  }
+
+  /**
+   * Update the current input text (call this when the prompt input changes).
+   * Required for Tab history completion to know what partial text to match.
+   * @param {string} input
+   */
+  setCurrentInput(input) {
+    this._currentInput = input || ''
+  }
+
+  /**
+   * Find the most recent history entry that starts with `partial`.
+   * Delegates to HistorySearch.getTabCompletion if available.
+   * @param {string} partial
+   * @returns {string|null}
+   */
+  _getTabCompletion(partial) {
+    if (!partial) return null
+    // Try in-class history first
+    for (let i = this.history.length - 1; i >= 0; i--) {
+      if (this.history[i].startsWith(partial)) return this.history[i]
+    }
+    return null
   }
 
   /**
@@ -76,8 +102,17 @@ class KeyboardManager extends EventEmitter {
       return true
     }
 
-    // Tab: Thinking toggle (already implemented)
+    // Tab: history completion if input is non-empty and matches history,
+    // otherwise fall through to thinking toggle.
+    // (CC 2.1.14 parity — bash history Tab autocomplete)
     if (input === '\t') {
+      if (this._currentInput && this._currentInput.trim()) {
+        const completion = this._getTabCompletion(this._currentInput)
+        if (completion) {
+          this.emit('tab-complete', completion)
+          return true
+        }
+      }
       this.emit('toggle-thinking')
       return true
     }

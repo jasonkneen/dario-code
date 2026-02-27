@@ -157,6 +157,15 @@ export async function setupCommanderCLI(stdin, options = {}) {
       await handleDoctor();
     });
 
+  // Agents subcommand — lists all configured agents (CC 2.1.50 parity)
+  program
+    .command('agents')
+    .description('List all configured agents from .claude/agents/ and ~/.claude/agents/')
+    .option('--json', 'Output as JSON')
+    .action(async (options) => {
+      await handleAgentsList(options);
+    });
+
   // Parse command line arguments
   await program.parseAsync(process.argv);
 
@@ -276,6 +285,45 @@ async function initialize(cwd, skipPermissions) {
 
 async function showOnboardingIfNeeded(skipPermissions, printMode) {
   throw new Error('Not implemented');
+}
+
+/**
+ * Handle `claude agents` — list all configured agents.
+ * Mirrors CC 2.1.50 behaviour: scans ~/.claude/agents/ and .claude/agents/
+ * and prints a summary table (or JSON with --json).
+ */
+async function handleAgentsList({ json } = {}) {
+  try {
+    const { listAgents } = await import('../agents/named-agents.mjs');
+    const agents = listAgents(process.cwd());
+
+    if (json) {
+      console.log(JSON.stringify(agents, null, 2));
+      return;
+    }
+
+    if (agents.length === 0) {
+      console.log('No agents configured.\n');
+      console.log('Add agent definitions to:');
+      console.log('  ~/.claude/agents/<name>.md   (global)');
+      console.log('  .claude/agents/<name>.md      (project)');
+      return;
+    }
+
+    console.log(`\n${'NAME'.padEnd(20)} ${'MODEL'.padEnd(20)} ${'TOOLS'.padEnd(30)} SOURCE`);
+    console.log('─'.repeat(85));
+    for (const agent of agents) {
+      const name = (agent.name || '?').padEnd(20);
+      const model = (agent.model || 'default').padEnd(20);
+      const tools = ((agent.tools || []).join(', ') || 'all').slice(0, 28).padEnd(30);
+      const source = agent.source || '';
+      console.log(`${name} ${model} ${tools} ${source}`);
+    }
+    console.log();
+  } catch (err) {
+    console.error('Failed to list agents:', err.message);
+    process.exit(1);
+  }
 }
 
 async function loadEnabledTools(enableArchitect) {

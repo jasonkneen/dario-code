@@ -5,6 +5,27 @@
 import { runQuery } from '../api/streaming.mjs';
 import { createMessage } from './messages.mjs';
 
+/**
+ * Resolve the model to use for summarization.
+ * Uses OPENCLAUDE_COMPACT_MODEL env var if set, otherwise falls back to
+ * claude-haiku-4-5 or the current session model — whichever is cheaper.
+ * Avoids hardcoding a specific dated model string.
+ */
+function getSummarizationModel() {
+  if (process.env.OPENCLAUDE_COMPACT_MODEL) {
+    return process.env.OPENCLAUDE_COMPACT_MODEL;
+  }
+  // Prefer a fast/cheap model; fall back gracefully if config unavailable
+  try {
+    // Dynamic import avoids circular deps at module level
+    const { getConfig } = require('../config/index.mjs');
+    const cfg = getConfig();
+    if (cfg?.compactModel) return cfg.compactModel;
+  } catch {}
+  // Default: latest haiku (no dated suffix — Anthropic aliases the latest)
+  return 'claude-haiku-4-5-20251001';
+}
+
 const SUMMARIZATION_PROMPT = `
 You are a conversation summarizer. Your task is to read the provided conversation history and create a concise summary. The summary should be written from the perspective of an omniscient narrator, explaining what was discussed and what actions were taken.
 
@@ -29,7 +50,7 @@ async function summarize(messages) {
     const summaryResult = await runQuery(
       `${SUMMARIZATION_PROMPT}\n\n---\n\n${content}`,
       [], // No tools needed for summarization
-      { model: 'claude-haiku-4-5-20251001' } // Use a fast model for summarization
+      { model: getSummarizationModel() }
     );
 
     const summaryText = summaryResult[0]?.message?.content?.[0]?.text || '[Could not generate summary]';
@@ -66,4 +87,45 @@ ${summaryText}`
   );
 
   return [summaryMessage, ...toKeep];
+}
+
+/**
+ * Compact from a specific message index onwards.
+ * Summarizes messages[fromIndex ... -keepLastN], keeping newer messages intact.
+ * (CC 2.1.32 "summarize from here" parity)
+ *
+ * @param {Array} messages - The full message history.
+ * @param {number} fromIndex - Index to start summarizing from (0-based).
+ * @param {number} keepLastN - Number of recent messages to keep verbatim.
+ * @returns {Promise<Array>} - New message array with summary inserted at fromIndex.
+ */
+export async function compactFromMessage(messages, fromIndex, keepLastN = 4) {
+  if (!messages || messages.length === 0) return messages;
+
+  const safeFrom = Math.max(0, Math.min(fromIndex, messages.length - 1));
+  const sliceEnd = messages.length - keepLastN;
+
+  // Nothing to summarize if the range is empty
+  if (safeFrom >= sliceEnd) {
+    return messages;
+  }
+
+  // Keep messages before fromIndex intact (they form the "before" anchor)
+  const before = messages.slice(0, safeFrom);
+  const toSummarize = messages.slice(safeFrom, sliceEnd);
+  const toKeep = messages.slice(sliceEnd);
+
+  if (toSummarize.length === 0) return messages;
+
+  const summaryText = await summarize(toSummarize);
+
+  const summaryMessage = createMessage(
+    'user',
+    `[Context summarized from message ${safeFrom + 1}: ${toSummarize.length} messages condensed.]
+
+**Summary:**
+${summaryText}`
+  );
+
+  return [...before, summaryMessage, ...toKeep];
 }

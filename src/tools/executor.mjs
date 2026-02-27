@@ -258,6 +258,10 @@ export function createInteractivePermissionHandler(opts = {}) {
   const output = opts.stderr || process.stderr
   return async (tool, input) => {
     const descriptor = buildToolDescriptor(tool, input)
+
+    // Diff preview for Write/Edit tools (CC 2.x parity)
+    await _showDiffPreviewIfApplicable(tool, input, output)
+
     output.write(`\n⚡ Tool permission required: ${descriptor}\n`)
     output.write('  Allow? [y]es / [a]lways / [n]o: ')
 
@@ -280,6 +284,48 @@ export function createInteractivePermissionHandler(opts = {}) {
     if (answer === 'a') return 'always'
     if (answer === 'y') return true
     return false
+  }
+}
+
+/**
+ * Show a compact unified diff above the permission prompt for Write/Edit tools.
+ * (CC 2.x diff preview in permission prompts — parity)
+ *
+ * @param {Object} tool
+ * @param {Object} input
+ * @param {NodeJS.WriteStream} output
+ */
+async function _showDiffPreviewIfApplicable(tool, input, output) {
+  try {
+    const { generateUnifiedDiff, renderDiffColored } = await import('../utils/diff.mjs')
+    const toolName = tool.name || ''
+
+    if (toolName === 'Write' || toolName.toLowerCase() === 'write') {
+      const filePath = input?.file_path
+      const newContent = input?.content || input?.new_content || ''
+      if (filePath && newContent) {
+        let before = ''
+        try { before = fs.readFileSync(filePath, 'utf-8') } catch {}
+        const diff = generateUnifiedDiff(filePath, before, newContent)
+        const colored = renderDiffColored(diff)
+        if (colored && colored !== '  (no changes)') {
+          output.write('\n' + colored + '\n')
+        }
+      }
+    } else if (toolName === 'Edit' || toolName.toLowerCase() === 'edit') {
+      const oldString = input?.old_string || ''
+      const newString = input?.new_string || ''
+      const filePath = input?.file_path || 'file'
+      if (oldString !== newString) {
+        const diff = generateUnifiedDiff(path.basename(filePath), oldString, newString)
+        const colored = renderDiffColored(diff)
+        if (colored && colored !== '  (no changes)') {
+          output.write('\n' + colored + '\n')
+        }
+      }
+    }
+  } catch {
+    // Diff preview is best-effort — never block the permission prompt
   }
 }
 

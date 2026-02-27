@@ -1833,8 +1833,29 @@ export const compactCommand = {
       return 'Not enough messages to compact (need at least 5 messages)'
     }
 
-    const { compactMessagesWithAi } = await import('../utils/summarize.mjs');
-    const compacted = await compactMessagesWithAi(messages);
+    const { compactMessagesWithAi, compactFromMessage } = await import('../utils/summarize.mjs');
+
+    const args = context?.args || []
+    let compacted
+
+    if (args[0] === 'last' && args[1]) {
+      // /compact last <N> — keep only the last N messages, summarize everything before
+      const keepN = parseInt(args[1], 10)
+      if (isNaN(keepN) || keepN < 1) return 'Usage: /compact last <N> — keep last N messages'
+      const fromIndex = Math.max(0, messages.length - keepN)
+      compacted = await compactFromMessage(messages, 0, keepN)
+    } else if (args[0] && !isNaN(parseInt(args[0], 10))) {
+      // /compact <N> — compact from message N onwards
+      const fromIndex = parseInt(args[0], 10) - 1  // user-facing 1-based
+      if (fromIndex < 0 || fromIndex >= messages.length) {
+        return `Message index out of range (1–${messages.length})`
+      }
+      compacted = await compactFromMessage(messages, fromIndex, 4)
+    } else {
+      // /compact — compact all (existing behaviour)
+      compacted = await compactMessagesWithAi(messages)
+    }
+
     const removed = messages.length - compacted.length;
 
     if (removed <= 0) {
@@ -1843,13 +1864,12 @@ export const compactCommand = {
 
     // Tell the TUI to replace messages with the compacted set
     if (context?.setMessages) {
-      context.setMessages(compacted)
       const confirmationMsg = createMessage('assistant', `✓ Compacted conversation: ${removed} older messages were summarized into a new context message.`);
       context.setMessages([...compacted, confirmationMsg]);
       return null; // TUI handles the message
     }
 
-    // Fallback for non-TUI - not ideal as it can't modify the history
+    // Fallback for non-TUI
     return `Compaction needed, but cannot be performed in this mode. ${removed} messages could be summarized.`
   }
 }
@@ -1997,7 +2017,7 @@ export const permissionsCommand = {
 export const memoryCommand = {
   type: 'local',
   name: 'memory',
-  description: 'Show or edit CLAUDE.md memory files',
+  description: 'Show or edit CLAUDE.md memory files and auto-extracted memories',
   isEnabled: true,
   userFacingName() { return 'memory' },
 
@@ -2006,6 +2026,7 @@ export const memoryCommand = {
     const { join } = await import('path')
     const cwd = process.cwd()
     const arg = context?.args?.[0]?.toLowerCase()
+    const argKey = context?.args?.[1]
 
     const locations = [
       { label: 'Project', path: join(cwd, 'CLAUDE.md'), source: 'PRJ' },
@@ -2013,7 +2034,7 @@ export const memoryCommand = {
       { label: 'User (CC)', path: join(getClaudeConfigDir(), 'CLAUDE.md'), source: 'CC' },
     ]
 
-    if (arg === 'edit') {
+    if (arg === 'edit' && !argKey) {
       const projectMd = join(cwd, 'CLAUDE.md')
       if (!existsSync(projectMd)) {
         return 'No CLAUDE.md in current directory. Use /init to create one.'
@@ -2029,6 +2050,59 @@ export const memoryCommand = {
         }
       }
       return `Edit your memory file at: ${projectMd}`
+    }
+
+    // Auto-memory subcommands (CC 2.1.32 parity)
+    if (arg === 'list') {
+      const { loadMemories } = await import('../memory/auto-memory.mjs')
+      const memories = loadMemories(cwd)
+      if (memories.size === 0) {
+        return '  No auto-extracted memories found.\n  Memories appear after 5+ conversation turns.'
+      }
+      let out = `\n  Auto-Extracted Memories (${memories.size})\n  ${'─'.repeat(44)}\n`
+      for (const { key, value, scope, timestamp } of memories.values()) {
+        const ts = timestamp ? ` (${timestamp.slice(0, 10)})` : ''
+        const tag = scope === 'global' ? ' [global]' : ''
+        out += `\n  [${key}]${tag}${ts}\n  ${value.split('\n')[0].slice(0, 80)}\n`
+      }
+      return out
+    }
+
+    if (arg === 'edit' && argKey) {
+      const { getMemoryDir } = await import('../memory/auto-memory.mjs')
+      const { sanitizeKey } = await import('../memory/auto-memory.mjs').catch(() => ({ sanitizeKey: k => k }))
+      const safeKey = argKey.toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/-{2,}/g, '-')
+      const projectDir = getMemoryDir('project', cwd)
+      const globalDir = getMemoryDir('global', cwd)
+      const candidates = [
+        join(projectDir, `${safeKey}.md`),
+        join(globalDir, `${safeKey}.md`),
+      ]
+      const filePath = candidates.find(p => existsSync(p))
+      if (!filePath) return `Memory key not found: ${argKey}`
+      const editor = process.env.EDITOR || process.env.VISUAL
+      if (editor) {
+        const { execFileSync } = await import('child_process')
+        try {
+          execFileSync(editor, [filePath], { stdio: 'inherit' })
+          return `✓ Memory edited: ${argKey}`
+        } catch {
+          return `✗ Failed to open editor. Edit manually: ${filePath}`
+        }
+      }
+      return `Edit memory at: ${filePath}`
+    }
+
+    if (arg === 'delete' && argKey) {
+      const { deleteMemory } = await import('../memory/auto-memory.mjs')
+      const deleted = deleteMemory(argKey, 'all', cwd)
+      return deleted ? `✓ Deleted memory: ${argKey}` : `Memory not found: ${argKey}`
+    }
+
+    if (arg === 'clear') {
+      const { clearMemories } = await import('../memory/auto-memory.mjs')
+      const count = clearMemories('all', cwd)
+      return `✓ Cleared ${count} auto-extracted memory file${count === 1 ? '' : 's'}`
     }
 
     let output = `\n  Memory Files (CLAUDE.md)\n  ${'─'.repeat(44)}\n`
@@ -2050,8 +2124,22 @@ export const memoryCommand = {
       }
     }
 
-    output += `\n  Usage: /memory        - Show memory files`
-    output += `\n         /memory edit   - Open project CLAUDE.md in editor`
+    // Show auto-memory summary
+    try {
+      const { loadMemories } = await import('../memory/auto-memory.mjs')
+      const memories = loadMemories(cwd)
+      if (memories.size > 0) {
+        output += `\n  Auto-Extracted Memories: ${memories.size} facts stored\n`
+        output += `  Run /memory list to view them\n`
+      }
+    } catch {}
+
+    output += `\n  Usage: /memory               - Show memory files`
+    output += `\n         /memory list           - List auto-extracted memories`
+    output += `\n         /memory edit           - Open project CLAUDE.md in editor`
+    output += `\n         /memory edit <key>     - Edit specific auto memory`
+    output += `\n         /memory delete <key>   - Delete an auto memory fact`
+    output += `\n         /memory clear          - Clear all auto-extracted memories`
     return output
   }
 }

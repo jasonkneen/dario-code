@@ -195,10 +195,135 @@ export async function uninstallPlugin(pluginName) {
 }
 
 /**
- * Update a plugin
+ * Install a plugin from a GitHub repository with optional SHA pin.
+ * Supports source format: "github:user/repo"
+ *
+ * @param {string} source - e.g. "github:user/repo"
+ * @param {{ pin?: string }} options - Optional pin SHA/ref
  */
-export async function updatePlugin(pluginName) {
-  // For now, uninstall and reinstall
+export async function installFromGit(source, options = {}) {
+  const gitUrl = parseGitSource(source)
+  if (!gitUrl) throw new Error(`Unsupported source format: ${source}`)
+
+  const pluginsDir = getPluginsDir()
+  if (!fileExists(pluginsDir)) {
+    fs.mkdirSync(pluginsDir, { recursive: true })
+  }
+
+  // Clone to temp dir
+  const tempName = `git-plugin-${Date.now()}`
+  const tempDir = path.join(TEMP_DIR, tempName)
+  if (!fileExists(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true })
+
+  try {
+    // Use spawnSync with array args to avoid shell injection
+    const { spawnSync } = await import('child_process')
+
+    const cloneResult = spawnSync('git', ['clone', '--depth=50', gitUrl, tempDir], { stdio: 'pipe' })
+    if (cloneResult.status !== 0) {
+      throw new Error(`git clone failed: ${cloneResult.stderr?.toString().trim() || 'unknown error'}`)
+    }
+
+    // Checkout pin if specified (validate pin is a safe ref: alphanumeric + ./-)
+    if (options.pin) {
+      const safePin = options.pin.replace(/[^a-zA-Z0-9._\-/]/g, '')
+      if (safePin !== options.pin) throw new Error(`Invalid pin ref: ${options.pin}`)
+      const checkoutResult = spawnSync('git', ['-C', tempDir, 'checkout', safePin], { stdio: 'pipe' })
+      if (checkoutResult.status !== 0) {
+        throw new Error(`git checkout ${safePin} failed: ${checkoutResult.stderr?.toString().trim()}`)
+      }
+    }
+
+    // Get the actual resolved SHA
+    let resolvedSha = null
+    try {
+      const shaResult = spawnSync('git', ['-C', tempDir, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: 'pipe' })
+      if (shaResult.status === 0) resolvedSha = shaResult.stdout.trim()
+    } catch {}
+
+    // Load and validate manifest
+    const manifestPath = path.join(tempDir, 'manifest.json')
+    if (!fileExists(manifestPath)) throw new Error('Plugin does not have a manifest.json file')
+
+    const manifestContent = readFile(manifestPath)
+    const manifest = JSON.parse(manifestContent)
+    const validation = validateManifest(manifest)
+    if (!validation.valid) throw new Error(`Invalid manifest: ${validation.errors.join(', ')}`)
+
+    const pluginName = manifest.name
+    const pluginDir = getPluginDir(pluginName)
+
+    // Copy to final location
+    if (fileExists(pluginDir)) fs.rmSync(pluginDir, { recursive: true })
+    fs.cpSync(tempDir, pluginDir, { recursive: true })
+
+    // Update manifest with pin metadata
+    const installedManifestPath = path.join(pluginDir, 'manifest.json')
+    const installedManifest = JSON.parse(readFile(installedManifestPath))
+    installedManifest.source = source
+    if (options.pin) installedManifest.pin = options.pin
+    if (resolvedSha) installedManifest.resolvedSha = resolvedSha
+    writeFile(installedManifestPath, JSON.stringify(installedManifest, null, 2))
+
+    registerPlugin(pluginName)
+    return { success: true, name: pluginName, version: manifest.version, path: pluginDir, resolvedSha }
+  } finally {
+    if (fileExists(tempDir)) {
+      try { fs.rmSync(tempDir, { recursive: true }) } catch {}
+    }
+  }
+}
+
+/**
+ * Parse a source string like "github:user/repo" to a git clone URL.
+ */
+function parseGitSource(source) {
+  if (!source) return null
+  if (source.startsWith('github:')) {
+    const repo = source.slice('github:'.length)
+    // Only allow safe repo paths: alphanumeric, hyphens, underscores, forward slashes
+    if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repo)) return null
+    return `https://github.com/${repo}.git`
+  }
+  if (source.startsWith('https://') || source.startsWith('git@')) {
+    return source
+  }
+  return null
+}
+
+/**
+ * Update a plugin.
+ * If the installed manifest has a `pin` field, warn and skip auto-update
+ * unless the `force` or `unpin` option is set.
+ *
+ * @param {string} pluginName
+ * @param {{ force?: boolean, unpin?: boolean }} options
+ */
+export async function updatePlugin(pluginName, options = {}) {
+  // Check if pinned
+  const pluginDir = getPluginDir(pluginName)
+  const manifestPath = path.join(pluginDir, 'manifest.json')
+  if (fileExists(manifestPath)) {
+    try {
+      const manifest = JSON.parse(readFile(manifestPath))
+      if (manifest.pin && !options.force && !options.unpin) {
+        return {
+          success: false,
+          skipped: true,
+          name: pluginName,
+          pin: manifest.pin,
+          message: `Plugin is pinned to ${manifest.pin}. Use --force or --unpin to update.`
+        }
+      }
+      // If source is a git source, reinstall from git
+      if (manifest.source && parseGitSource(manifest.source)) {
+        const pin = options.unpin ? undefined : manifest.pin
+        return await installFromGit(manifest.source, { pin })
+      }
+    } catch {}
+  }
+
+  // Default: uninstall and reinstall from npm
   await uninstallPlugin(pluginName)
   return await installFromNpm(pluginName)
 }
@@ -206,6 +331,7 @@ export async function updatePlugin(pluginName) {
 export default {
   installFromNpm,
   installFromLocal,
+  installFromGit,
   uninstallPlugin,
   updatePlugin
 }

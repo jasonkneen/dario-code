@@ -568,6 +568,39 @@ export function getModelSync() {
   return getDefaultModel()
 }
 
+// ============================================================================
+// Auto-compact threshold (CC 2.1.x parity — configurable compaction trigger)
+// ============================================================================
+
+const DEFAULT_COMPACT_THRESHOLD = 0.85  // 85% context usage
+
+/**
+ * Get the auto-compact threshold (0–1 fraction of context window).
+ * When context usage exceeds this fraction, auto-compaction triggers.
+ * Default: 0.85 (85%).
+ * Configurable via: ~/.openclaude/config.json { "compactThreshold": 0.85 }
+ *
+ * @returns {number} Threshold between 0 and 1
+ */
+export function getCompactThreshold() {
+  const val = getConfigValue('compactThreshold', DEFAULT_COMPACT_THRESHOLD)
+  const parsed = parseFloat(val)
+  if (isNaN(parsed) || parsed <= 0 || parsed > 1) return DEFAULT_COMPACT_THRESHOLD
+  return parsed
+}
+
+/**
+ * Set the auto-compact threshold.
+ * @param {number} threshold - Value between 0.1 and 1.0
+ */
+export function setCompactThreshold(threshold) {
+  const val = parseFloat(threshold)
+  if (isNaN(val) || val < 0.1 || val > 1) {
+    throw new Error('compactThreshold must be a number between 0.1 and 1.0')
+  }
+  setConfigValue('compactThreshold', val)
+}
+
 /**
  * Load global config (user-level config from ~/.openclaude or ~/.claude)
  * @returns {Object} Global configuration
@@ -630,6 +663,15 @@ export async function getSystemPrompt(options = {}) {
     `Date: ${new Date().toISOString().split('T')[0]}`
   ].join('\n')
 
+  // Load auto memories (CC 2.1.32 parity)
+  let memoriesSection = ''
+  try {
+    const { buildMemoryContext } = await import('../memory/auto-memory.mjs')
+    memoriesSection = buildMemoryContext(cwd)
+  } catch {
+    // Memory module unavailable — skip silently
+  }
+
   // Core system prompt
   const systemPrompt = `You are OpenClaude, an AI assistant for software engineering tasks.
 
@@ -640,7 +682,7 @@ ${envInfo}
 
 ## Instructions from CLAUDE.md files
 ${claudeMdContent || 'No CLAUDE.md files found.'}
-
+${memoriesSection ? `\n${memoriesSection}` : ''}
 ## Guidelines
 - Be direct and concise
 - Use tools to complete tasks
@@ -675,5 +717,7 @@ export default {
   loadGlobalConfig,
   saveGlobalConfig,
   getApiKey,
-  getSystemPrompt
+  getSystemPrompt,
+  getCompactThreshold,
+  setCompactThreshold
 }

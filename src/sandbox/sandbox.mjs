@@ -13,10 +13,82 @@ import fs from 'fs'
 
 /**
  * Check if the current platform supports sandboxing
- * Currently only macOS supports sandbox-exec
+ * macOS uses sandbox-exec; Linux uses bubblewrap (bwrap) or firejail
+ * (CC 2.1.41 parity — Linux sandbox support)
  */
 export function isSandboxSupported() {
-  return platform() === 'darwin'
+  const p = platform()
+  if (p === 'darwin') return true
+  if (p === 'linux') return detectLinuxSandboxBin() !== null
+  return false
+}
+
+/**
+ * Detect which Linux sandbox binary is available.
+ * Returns 'bwrap' (bubblewrap, preferred) or 'firejail', or null if neither found.
+ * (CC 2.1.41 parity)
+ */
+export function detectLinuxSandboxBin() {
+  const candidates = ['bwrap', 'firejail']
+  for (const bin of candidates) {
+    try {
+      const result = spawnSync('which', [bin], { encoding: 'utf8', timeout: 2000 })
+      if (result.status === 0 && result.stdout.trim()) {
+        return bin
+      }
+    } catch {
+      // bin not found
+    }
+  }
+  return null
+}
+
+/**
+ * Wrap a command using bubblewrap or firejail on Linux.
+ * Restricts write access to projectDir and /tmp.
+ *
+ * @param {string} command - Shell command to wrap
+ * @param {string} projectDir - Project directory (allowed writes)
+ * @returns {string|null} Wrapped command, or null if no sandbox available
+ */
+export function wrapCommandLinux(command, projectDir) {
+  const bin = detectLinuxSandboxBin()
+  if (!bin) return null
+
+  const escapedCommand = command.replace(/'/g, "'\\''")
+
+  if (bin === 'bwrap') {
+    // bubblewrap: bind full filesystem read-only, then allow writes in projectDir + /tmp
+    const bwrapArgs = [
+      '--ro-bind', '/', '/',
+      '--dev', '/dev',
+      '--proc', '/proc',
+      '--tmpfs', '/tmp',
+      '--bind', projectDir, projectDir,
+      '--bind', '/tmp', '/tmp',
+      // Deny sensitive credential paths
+      '--ro-bind-try', `${process.env.HOME}/.ssh`, `${process.env.HOME}/.ssh-ro-only`,
+      '--',
+      'sh', '-c', `'${escapedCommand}'`,
+    ].join(' ')
+    return `${bin} ${bwrapArgs}`
+  }
+
+  if (bin === 'firejail') {
+    // firejail: whitelist the project directory and /tmp, block everything else
+    const firejailArgs = [
+      `--whitelist=${projectDir}`,
+      `--whitelist=/tmp`,
+      `--read-only=/`,
+      `--read-write=${projectDir}`,
+      `--read-write=/tmp`,
+      '--',
+      'sh', '-c', `'${escapedCommand}'`,
+    ].join(' ')
+    return `${bin} ${firejailArgs}`
+  }
+
+  return null
 }
 
 /**
@@ -184,23 +256,34 @@ export function deleteSandboxProfile(profilePath) {
 }
 
 /**
- * Wrap a command with sandbox-exec
+ * Wrap a command with the platform-appropriate sandbox.
  *
- * Returns the wrapped command string or null if sandboxing not supported
+ * On macOS: uses sandbox-exec with a profile file.
+ * On Linux: uses bubblewrap (bwrap) or firejail via wrapCommandLinux().
+ * On other platforms: returns null (no sandbox available).
+ *
+ * @param {string} command - Shell command to sandbox
+ * @param {string} profilePathOrProjectDir - On macOS: path to sandbox profile file.
+ *   On Linux: project directory (used as the write-allowed root).
+ * @returns {string|null} Wrapped command or null
  */
-export function wrapCommand(command, profilePath) {
-  if (!isSandboxSupported()) {
-    return null
+export function wrapCommand(command, profilePathOrProjectDir) {
+  const p = platform()
+
+  if (p === 'darwin') {
+    // macOS: sandbox-exec with profile file
+    const profilePath = profilePathOrProjectDir
+    if (!profilePath || !fs.existsSync(profilePath)) return null
+    const escapedCommand = command.replace(/'/g, "'\\''")
+    return `sandbox-exec -f "${profilePath}" sh -c '${escapedCommand}'`
   }
 
-  if (!profilePath || !fs.existsSync(profilePath)) {
-    return null
+  if (p === 'linux') {
+    const projectDir = profilePathOrProjectDir || process.cwd()
+    return wrapCommandLinux(command, projectDir)
   }
 
-  // Escape single quotes in the command for shell safety
-  const escapedCommand = command.replace(/'/g, "'\\''")
-
-  return `sandbox-exec -f "${profilePath}" sh -c '${escapedCommand}'`
+  return null
 }
 
 /**
@@ -292,7 +375,23 @@ export function executeWithSandbox(command, options = {}) {
     }
   }
 
-  // Create and use sandbox profile
+  // On Linux: use wrapCommandLinux directly (no profile file needed)
+  if (platform() === 'linux') {
+    try {
+      const wrappedCommand = wrapCommandLinux(command, settings.projectDir)
+      if (!wrappedCommand) {
+        // No Linux sandbox binary available — fall back to unsandboxed
+        const result = spawnSync('sh', ['-c', command], { encoding: 'utf8', timeout: 120000 })
+        return { stdout: result.stdout || '', stderr: result.stderr || '', code: result.status || 0, sandboxed: false, escaped: false }
+      }
+      const result = spawnSync('sh', ['-c', wrappedCommand], { encoding: 'utf8', timeout: 120000 })
+      return { stdout: result.stdout || '', stderr: result.stderr || '', code: result.status || 0, sandboxed: true, escaped: false }
+    } catch (error) {
+      return { stdout: '', stderr: error.message, code: 1, sandboxed: false, escaped: false }
+    }
+  }
+
+  // Create and use macOS sandbox profile
   const profile = createSandboxProfile({
     projectDir: settings.projectDir,
     allowNetwork: settings.allowNetwork,
@@ -367,6 +466,8 @@ export function isInAllowlist(command, allowlist = []) {
 export default {
   isSandboxSupported,
   detectEscapeAttempt,
+  detectLinuxSandboxBin,
+  wrapCommandLinux,
   createSandboxProfile,
   writeSandboxProfile,
   deleteSandboxProfile,

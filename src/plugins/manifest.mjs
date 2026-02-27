@@ -15,7 +15,10 @@ export const PLUGIN_MANIFEST_SCHEMA = {
   entry: 'string (optional) - path to entry point (default: index.mjs)',
   commands: 'array (optional) - custom commands provided by plugin',
   tools: 'array (optional) - MCP tools provided by plugin',
-  config: 'object (optional) - default configuration values'
+  config: 'object (optional) - default configuration values',
+  source: 'string (optional) - install source, e.g. "github:user/repo"',
+  pin: 'string (optional) - git SHA or ref to pin the plugin version (reproducible installs)',
+  resolvedSha: 'string (internal) - the actual git SHA after installation'
 }
 
 /**
@@ -62,6 +65,11 @@ export function validateManifest(manifest) {
     errors.push('config must be an object')
   }
 
+  // Optional SHA pin field — must be a non-empty string if present
+  if (manifest.pin !== undefined && (typeof manifest.pin !== 'string' || !manifest.pin.trim())) {
+    errors.push('pin must be a non-empty string (git SHA or ref)')
+  }
+
   return {
     valid: errors.length === 0,
     errors
@@ -83,6 +91,11 @@ export function createManifest(data) {
     tools: data.tools || [],
     config: data.config || {}
   }
+
+  // Preserve optional SHA pin fields
+  if (data.source) manifest.source = data.source
+  if (data.pin) manifest.pin = data.pin
+  if (data.resolvedSha) manifest.resolvedSha = data.resolvedSha
 
   return manifest
 }

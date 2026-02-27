@@ -110,6 +110,9 @@ function loadAgentFile(filePath) {
       memory: metadata.memory || null,
       hooks: metadata.hooks || null,
       context: metadata.context || null,
+      // isolation: 'worktree' spins up an isolated git worktree for the agent
+      // (CC 2.1.50 parity). If isolation is not set, defaults to 'none'.
+      isolation: metadata.isolation || 'none',
       once: metadata.once || false,
       userInvocable: metadata['user-invocable'] !== false,
       description: metadata.description || '',

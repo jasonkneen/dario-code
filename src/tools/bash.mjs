@@ -135,10 +135,61 @@ export function parseCommands(command) {
 }
 
 /**
+ * Validate heredoc usage for command smuggling.
+ *
+ * A malicious model could craft a heredoc where the content contains the
+ * delimiter token, terminating the heredoc early and injecting additional
+ * commands. For example:
+ *
+ *   cat <<'EOF'
+ *   hello
+ *   EOF
+ *   rm -rf /  ← injected after premature EOF
+ *   EOF
+ *
+ * We detect this by extracting every heredoc block and checking whether its
+ * content contains the delimiter on a line by itself (which would terminate
+ * the heredoc prematurely when the shell processes it).
+ *
+ * @param {string} command
+ * @returns {{ safe: boolean, message?: string }}
+ */
+export function validateHeredocs(command) {
+  // Match both quoted (<<'EOF') and unquoted (<<EOF) delimiters
+  const heredocPattern = /<<-?['"]?(\w+)['"]?\s*\n([\s\S]*?)^\1$/gm
+
+  let match
+  while ((match = heredocPattern.exec(command)) !== null) {
+    const delimiter = match[1]
+    const body = match[2]
+
+    // Check if the body contains a line that is exactly the delimiter
+    // (possibly with leading whitespace for <<-)
+    const lines = body.split('\n')
+    for (const line of lines) {
+      if (line.trim() === delimiter) {
+        return {
+          safe: false,
+          message: `Heredoc body contains the delimiter '${delimiter}' — potential command injection blocked.`
+        }
+      }
+    }
+  }
+
+  return { safe: true }
+}
+
+/**
  * Validate a command for security
  * Returns { result: boolean, message?: string }
  */
 export function validateCommand(command, originalWorkingDir, currentWorkingDir, resolvePathFn) {
+  // Security: validate heredoc delimiters before anything else
+  const heredocCheck = validateHeredocs(command)
+  if (!heredocCheck.safe) {
+    return { result: false, message: heredocCheck.message }
+  }
+
   const commands = parseCommands(command)
 
   for (const cmd of commands) {

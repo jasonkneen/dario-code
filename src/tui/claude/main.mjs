@@ -14,7 +14,7 @@ import { createMessage, normalizeMessages, getLastMessage } from '../../utils/me
 import { streamConversation } from '../../api/streaming.mjs'
 import { getAllTools } from '../../tools/index.mjs'
 import { formatError } from '../../utils/errors.mjs'
-import { loadConfig, saveConfig, VERSION, isFastMode, setFastMode, getFastModeModel, getFastModeDisplayName, modelSupportsFastMode } from '../../core/config.mjs'
+import { loadConfig, saveConfig, VERSION, isFastMode, setFastMode, getFastModeModel, getFastModeDisplayName, modelSupportsFastMode, getCompactThreshold } from '../../core/config.mjs'
 import { runHooks } from '../../core/hooks.mjs'
 import { getLocalCommands, processCommand as execCommand } from '../../cli/commands.mjs'
 import { glob } from 'glob'
@@ -51,6 +51,8 @@ import { deleteCustomAgent } from '../../agents/subagent.mjs'
 import { loadSettings, saveSettings, getDisabledContextItems, toggleContextItem, isContextItemDisabled, getCustomContextItems, addCustomContextItem, removeCustomContextItem } from '../../core/config.mjs'
 import { getTotalContextTokens } from '../../utils/tokens.mjs'
 import * as sessions from '../../sessions/index.mjs'
+import { onPlanApproved } from '../../plan/plan.mjs'
+import { startSkillsHotReload, stopSkillsHotReload, onSkillsChanged, invalidateSkillsCache } from '../../tools/skills-discovery.mjs'
 
 /**
  * Error Boundary - Catches React errors and displays them gracefully
@@ -2123,6 +2125,54 @@ function ConversationApp({
     } catch {}
   }, [])
 
+  // Section 8: Wire onPlanApproved → context compaction (CC 2.1.x parity)
+  // When the user accepts a plan, compact the conversation history so the
+  // execution phase starts with a full context window.
+  useEffect(() => {
+    const unregister = onPlanApproved(async (plan) => {
+      try {
+        const { compactMessagesWithAi } = await import('../../utils/summarize.mjs')
+        const planSummary = plan.description
+          ? `[Plan approved: ${plan.title}]\n\n${plan.description}`
+          : `[Plan approved: ${plan.title}]`
+        const summaryMsg = createMessage('user', planSummary)
+        const currentMsgs = []
+        setMessages(prev => {
+          const compacted = [summaryMsg]
+          currentMsgs.push(...prev)
+          return compacted
+        })
+        // Also run AI compaction on the previous messages to preserve key context
+        if (currentMsgs.length > 0) {
+          try {
+            const compacted = await compactMessagesWithAi(currentMsgs, 0)
+            const planMsg = createMessage('user', planSummary)
+            setMessages([planMsg, ...compacted.slice(1)])
+          } catch {
+            // Keep the simple summary if compaction fails
+          }
+        }
+      } catch {
+        // Never crash the TUI due to plan compaction errors
+      }
+    })
+    return unregister
+  }, [])
+
+  // Section 9: Skills hot-reload (CC 2.1.0 parity)
+  // Watches .claude/skills/ directories and invalidates the skills cache on change.
+  useEffect(() => {
+    const cwd = process.cwd()
+    startSkillsHotReload(cwd)
+    const unregisterChanged = onSkillsChanged(() => {
+      invalidateSkillsCache()
+    })
+    return () => {
+      unregisterChanged()
+      stopSkillsHotReload()
+    }
+  }, [])
+
   // MCP Manager handlers
   const handleMcpAddServer = useCallback((name, config) => {
     try {
@@ -2580,8 +2630,9 @@ function ConversationApp({
     try {
       let currentMessages = [...messages];
 
-      // Auto-compaction check (CC 2.x feature)
-      if (contextPercent > 80 && currentMessages.length > 10) {
+      // Auto-compaction check (CC 2.x feature — threshold configurable via compactThreshold)
+      const autoCompactThresholdPct = Math.round(getCompactThreshold() * 100)
+      if (contextPercent > autoCompactThresholdPct && currentMessages.length > 10) {
         const { compactMessagesWithAi } = await import('../../utils/summarize.mjs');
         const compactingMsg = createMessage('assistant', 'Context is getting full, compacting conversation history...');
         setMessages(prev => [...prev, compactingMsg]);

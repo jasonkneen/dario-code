@@ -229,10 +229,116 @@ export function listSkills(projectDir = process.cwd()) {
   return Array.from(skills.values()).filter(s => s.userInvocable)
 }
 
+// ---------------------------------------------------------------------------
+// Hot-reload (CC 2.1.0 parity)
+// Skills reload automatically when files change in .claude/skills/ or
+// ~/.claude/skills/ without requiring a session restart.
+// ---------------------------------------------------------------------------
+
+let _hotReloadWatchers = []
+let _hotReloadCallbacks = []
+
+/**
+ * Start watching skill directories for changes.
+ * Calls all registered callbacks when a change is detected.
+ *
+ * @param {string} projectDir
+ * @returns {Function} stop — call to tear down watchers
+ */
+export function startSkillsHotReload(projectDir = process.cwd()) {
+  stopSkillsHotReload()
+
+  const dirsToWatch = [
+    path.join(os.homedir(), CLAUDE_DIR_NAME, SKILLS_DIR_NAME),
+    path.join(projectDir, CLAUDE_DIR_NAME, SKILLS_DIR_NAME),
+  ]
+
+  if (process.env.OPENCLAUDE_ADD_DIRS) {
+    for (const addDir of process.env.OPENCLAUDE_ADD_DIRS.split(':').filter(Boolean)) {
+      dirsToWatch.push(path.join(addDir, CLAUDE_DIR_NAME, SKILLS_DIR_NAME))
+    }
+  }
+
+  for (const dir of dirsToWatch) {
+    if (!fs.existsSync(dir)) continue
+    try {
+      const watcher = fs.watch(dir, { recursive: false }, (eventType, filename) => {
+        if (!filename || !filename.endsWith('.md')) return
+        const changedPath = path.join(dir, filename)
+        for (const cb of _hotReloadCallbacks) {
+          try { cb(changedPath, eventType) } catch {}
+        }
+      })
+      _hotReloadWatchers.push(watcher)
+    } catch {
+      // Silently skip directories we can't watch (permissions, etc.)
+    }
+  }
+
+  return stopSkillsHotReload
+}
+
+/**
+ * Stop all hot-reload watchers.
+ */
+export function stopSkillsHotReload() {
+  for (const w of _hotReloadWatchers) {
+    try { w.close() } catch {}
+  }
+  _hotReloadWatchers = []
+}
+
+/**
+ * Register a callback to be invoked when a skill file changes.
+ * Useful for the TUI to invalidate its skills cache.
+ *
+ * @param {Function} callback - (changedPath: string, eventType: string) => void
+ * @returns {Function} unregister
+ */
+export function onSkillsChanged(callback) {
+  _hotReloadCallbacks.push(callback)
+  return () => {
+    _hotReloadCallbacks = _hotReloadCallbacks.filter(cb => cb !== callback)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Skills cache (CC 2.1.x parity — invalidated by hot-reload)
+// ---------------------------------------------------------------------------
+
+let _skillsCache = null
+
+/**
+ * Invalidate the in-memory skills cache.
+ * Called by the TUI's hot-reload handler so the next `discoverSkills` call
+ * rescans disk instead of returning stale data.
+ */
+export function invalidateSkillsCache() {
+  _skillsCache = null
+}
+
+/**
+ * Cached version of discoverSkills.
+ * Returns cached results on repeated calls; cache is cleared by invalidateSkillsCache().
+ *
+ * @param {string} projectDir
+ * @returns {Map<string, object>}
+ */
+export function discoverSkillsCached(projectDir = process.cwd()) {
+  if (_skillsCache !== null) return _skillsCache
+  _skillsCache = discoverSkills(projectDir)
+  return _skillsCache
+}
+
 export default {
   discoverSkills,
+  discoverSkillsCached,
+  invalidateSkillsCache,
   getSkillsContext,
   getSkill,
   listSkills,
   parseFrontmatter,
+  startSkillsHotReload,
+  stopSkillsHotReload,
+  onSkillsChanged,
 }

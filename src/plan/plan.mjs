@@ -264,8 +264,29 @@ export function exitPlanMode() {
   return result
 }
 
+// Callbacks invoked when a plan is approved (CC 2.1.x: clear context on accept)
+let _onApproveCallbacks = []
+
 /**
- * Approve plan
+ * Register a callback to be called when a plan is approved.
+ * The TUI uses this to compact/clear the conversation history,
+ * giving the execution phase a full context window (CC 2.1.x parity).
+ *
+ * @param {Function} callback - (plan) => void | Promise<void>
+ * @returns {Function} unregister
+ */
+export function onPlanApproved(callback) {
+  _onApproveCallbacks.push(callback)
+  return () => {
+    _onApproveCallbacks = _onApproveCallbacks.filter(cb => cb !== callback)
+  }
+}
+
+/**
+ * Approve plan.
+ * After approval, fires all onPlanApproved callbacks so the conversation
+ * history can be compacted — mirrors CC 2.1.x behaviour where accepting
+ * a plan clears the context window before execution begins.
  */
 export function approvePlan(planId) {
   const plan = loadPlan(planId)
@@ -283,6 +304,13 @@ export function approvePlan(planId) {
   savePlan(plan)
 
   currentPlan = plan
+
+  // Notify listeners (e.g. the TUI compaction handler) asynchronously.
+  // We don't await here to keep this function synchronous; listeners should
+  // handle their own async work and error recovery.
+  for (const cb of _onApproveCallbacks) {
+    try { Promise.resolve(cb(plan)).catch(() => {}) } catch {}
+  }
 
   return {
     success: true,
@@ -403,6 +431,7 @@ export default {
   enterPlanMode,
   exitPlanMode,
   approvePlan,
+  onPlanApproved,
   cancelPlan,
   getCurrentPlan,
   isInPlanMode,
