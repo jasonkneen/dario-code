@@ -29,7 +29,8 @@ import path from 'path'
 import os from 'os'
 
 const SKILLS_DIR_NAME = 'skills'
-const CLAUDE_DIR_NAME = '.claude'
+const CLAUDE_DIR_NAME = '.claude'   // CC-compatible, read-only
+const DARIO_DIR_NAME  = '.dario'    // Dario-native, read-write, takes precedence
 
 /**
  * Parse frontmatter from a skill file
@@ -161,25 +162,28 @@ function scanSkillsDir(dir, scope) {
 export function discoverSkills(projectDir = process.cwd()) {
   const allSkills = new Map()
 
-  // Global skills
-  const globalDir = path.join(os.homedir(), CLAUDE_DIR_NAME, SKILLS_DIR_NAME)
-  for (const skill of scanSkillsDir(globalDir, 'global')) {
-    allSkills.set(skill.name, skill)
+  // Load order (lowest → highest priority, later entries win):
+  //   1. ~/.claude/skills/    (CC-compatible, read-only)
+  //   2. ~/.dario/skills/     (Dario-native, overrides CC global)
+  //   3. .claude/skills/      (project CC-compatible)
+  //   4. .dario/skills/       (project Dario-native, highest priority)
+  //   5. --add-dir dirs        (both .claude and .dario variants)
+
+  const scanBoth = (base, scope) => {
+    for (const skill of scanSkillsDir(path.join(base, CLAUDE_DIR_NAME, SKILLS_DIR_NAME), scope)) {
+      allSkills.set(skill.name, skill)
+    }
+    for (const skill of scanSkillsDir(path.join(base, DARIO_DIR_NAME, SKILLS_DIR_NAME), scope)) {
+      allSkills.set(skill.name, skill) // .dario overrides .claude
+    }
   }
 
-  // Project skills (override global)
-  const projectSkillsDir = path.join(projectDir, CLAUDE_DIR_NAME, SKILLS_DIR_NAME)
-  for (const skill of scanSkillsDir(projectSkillsDir, 'project')) {
-    allSkills.set(skill.name, skill)
-  }
+  scanBoth(os.homedir(), 'global')
+  scanBoth(projectDir, 'project')
 
-  // Additional directories
   if (process.env.DARIO_ADD_DIRS) {
     for (const addDir of process.env.DARIO_ADD_DIRS.split(':').filter(Boolean)) {
-      const addSkillsDir = path.join(addDir, CLAUDE_DIR_NAME, SKILLS_DIR_NAME)
-      for (const skill of scanSkillsDir(addSkillsDir, 'additional')) {
-        allSkills.set(skill.name, skill)
-      }
+      scanBoth(addDir, 'additional')
     }
   }
 
@@ -248,14 +252,18 @@ let _hotReloadCallbacks = []
 export function startSkillsHotReload(projectDir = process.cwd()) {
   stopSkillsHotReload()
 
+  // Watch both .claude and .dario variants
   const dirsToWatch = [
     path.join(os.homedir(), CLAUDE_DIR_NAME, SKILLS_DIR_NAME),
-    path.join(projectDir, CLAUDE_DIR_NAME, SKILLS_DIR_NAME),
+    path.join(os.homedir(), DARIO_DIR_NAME,  SKILLS_DIR_NAME),
+    path.join(projectDir,   CLAUDE_DIR_NAME, SKILLS_DIR_NAME),
+    path.join(projectDir,   DARIO_DIR_NAME,  SKILLS_DIR_NAME),
   ]
 
   if (process.env.DARIO_ADD_DIRS) {
     for (const addDir of process.env.DARIO_ADD_DIRS.split(':').filter(Boolean)) {
       dirsToWatch.push(path.join(addDir, CLAUDE_DIR_NAME, SKILLS_DIR_NAME))
+      dirsToWatch.push(path.join(addDir, DARIO_DIR_NAME,  SKILLS_DIR_NAME))
     }
   }
 

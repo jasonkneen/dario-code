@@ -124,29 +124,34 @@ function loadAgentFile(filePath) {
 }
 
 /**
- * Discover all agent definitions from standard locations
+ * Discover all agent definitions from standard locations.
+ * Reads from both .claude/agents/ (CC-compatible) and .dario/agents/ (Dario-native).
+ * Load order: .claude first, .dario second — so .dario always wins on name collision.
+ *
  * Searches:
- *   ~/.claude/agents/
- *   ./.claude/agents/
- *   Additional directories (--add-dir)
+ *   ~/.claude/agents/   (CC global, read-only)
+ *   ~/.dario/agents/    (Dario global, takes precedence)
+ *   .claude/agents/     (CC project, read-only)
+ *   .dario/agents/      (Dario project, highest priority)
+ *   Additional --add-dir directories (both variants)
  */
 export function discoverAgents(projectDir = process.cwd()) {
   const agents = new Map()
   const searchDirs = []
 
-  // Global agents
-  const globalAgentsDir = path.join(os.homedir(), '.claude', 'agents')
-  searchDirs.push({ dir: globalAgentsDir, scope: 'global' })
+  // Global — .claude first, then .dario (so .dario wins)
+  searchDirs.push({ dir: path.join(os.homedir(), '.claude', 'agents'), scope: 'global' })
+  searchDirs.push({ dir: path.join(os.homedir(), '.dario',  'agents'), scope: 'global' })
 
-  // Project agents
-  const projectAgentsDir = path.join(projectDir, '.claude', 'agents')
-  searchDirs.push({ dir: projectAgentsDir, scope: 'project' })
+  // Project — .claude first, then .dario
+  searchDirs.push({ dir: path.join(projectDir, '.claude', 'agents'), scope: 'project' })
+  searchDirs.push({ dir: path.join(projectDir, '.dario',  'agents'), scope: 'project' })
 
   // Additional directories
   if (process.env.DARIO_ADD_DIRS) {
     for (const addDir of process.env.DARIO_ADD_DIRS.split(':').filter(Boolean)) {
-      const addAgentsDir = path.join(addDir, '.claude', 'agents')
-      searchDirs.push({ dir: addAgentsDir, scope: 'additional' })
+      searchDirs.push({ dir: path.join(addDir, '.claude', 'agents'), scope: 'additional' })
+      searchDirs.push({ dir: path.join(addDir, '.dario',  'agents'), scope: 'additional' })
     }
   }
 

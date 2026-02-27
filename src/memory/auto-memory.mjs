@@ -12,16 +12,34 @@ import path from 'path'
 import os from 'os'
 
 const MEMORY_DIR_NAME = 'memory'
-const CLAUDE_DIR_NAME = '.claude'
+const CLAUDE_DIR_NAME = '.claude'  // CC-compatible, read-only
+const DARIO_DIR_NAME  = '.dario'   // Dario-native, read-write
 
 /**
- * Get the memory directory path for a given scope
+ * Get the memory directory path for writing (always .dario).
  */
 export function getMemoryDir(scope = 'project', cwd = process.cwd()) {
   if (scope === 'global') {
-    return path.join(os.homedir(), CLAUDE_DIR_NAME, MEMORY_DIR_NAME)
+    return path.join(os.homedir(), DARIO_DIR_NAME, MEMORY_DIR_NAME)
   }
-  return path.join(cwd, CLAUDE_DIR_NAME, MEMORY_DIR_NAME)
+  return path.join(cwd, DARIO_DIR_NAME, MEMORY_DIR_NAME)
+}
+
+/**
+ * Get all memory directories to read from (both .claude and .dario).
+ * .dario entries are loaded last so they override .claude on key collision.
+ */
+export function getMemoryReadDirs(scope = 'project', cwd = process.cwd()) {
+  if (scope === 'global') {
+    return [
+      path.join(os.homedir(), CLAUDE_DIR_NAME, MEMORY_DIR_NAME),
+      path.join(os.homedir(), DARIO_DIR_NAME,  MEMORY_DIR_NAME),
+    ]
+  }
+  return [
+    path.join(cwd, CLAUDE_DIR_NAME, MEMORY_DIR_NAME),
+    path.join(cwd, DARIO_DIR_NAME,  MEMORY_DIR_NAME),
+  ]
 }
 
 /**
@@ -85,13 +103,14 @@ ${fact.value}
 export function loadMemories(cwd = process.cwd()) {
   const memories = new Map()
 
-  // Global first (lower priority)
-  const globalDir = getMemoryDir('global', cwd)
-  loadMemoriesFromDir(globalDir, 'global', memories)
-
-  // Project second (higher priority — overwrites global if same key)
-  const projectDir = getMemoryDir('project', cwd)
-  loadMemoriesFromDir(projectDir, 'project', memories)
+  // Read from all dirs in priority order (later = higher priority):
+  //   ~/.claude/memory → ~/.dario/memory → .claude/memory → .dario/memory
+  for (const dir of getMemoryReadDirs('global', cwd)) {
+    loadMemoriesFromDir(dir, 'global', memories)
+  }
+  for (const dir of getMemoryReadDirs('project', cwd)) {
+    loadMemoriesFromDir(dir, 'project', memories)
+  }
 
   return memories
 }

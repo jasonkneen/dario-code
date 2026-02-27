@@ -306,54 +306,25 @@ export function loadClaudeMd(projectDir = process.cwd()) {
     })
   }
 
-  // .claude/rules/ directory (CC 2.0.64+ feature)
-  // Load all .md files from .claude/rules/ as additional context
-  const rulesDir = path.join(projectDir, '.claude', 'rules')
-  try {
-    if (fs.existsSync(rulesDir)) {
-      const ruleFiles = fs.readdirSync(rulesDir)
-        .filter(f => f.endsWith('.md'))
-        .sort()
+  // Rules directories — read from both .claude/rules/ and .dario/rules/
+  // .dario/rules/ loaded second so it takes precedence on filename collision.
+  const loadRulesDir = (rulesDir, sourcePrefix) => {
+    try {
+      if (!fs.existsSync(rulesDir)) return
+      const ruleFiles = fs.readdirSync(rulesDir).filter(f => f.endsWith('.md')).sort()
       for (const ruleFile of ruleFiles) {
         const rulePath = path.join(rulesDir, ruleFile)
         try {
-          contents.push({
-            source: `rules/${ruleFile}`,
-            path: rulePath,
-            content: readFile(rulePath)
-          })
-        } catch (e) {
-          // Skip unreadable rule files
-        }
+          contents.push({ source: `${sourcePrefix}/${ruleFile}`, path: rulePath, content: readFile(rulePath) })
+        } catch { /* skip unreadable */ }
       }
-    }
-  } catch (e) {
-    // readdir failed, skip rules
+    } catch { /* skip unreadable dir */ }
   }
 
-  // Global rules from ~/.claude/rules/
-  const globalRulesDir = path.join(CLAUDE_DIR, 'rules')
-  try {
-    if (fs.existsSync(globalRulesDir)) {
-      const ruleFiles = fs.readdirSync(globalRulesDir)
-        .filter(f => f.endsWith('.md'))
-        .sort()
-      for (const ruleFile of ruleFiles) {
-        const rulePath = path.join(globalRulesDir, ruleFile)
-        try {
-          contents.push({
-            source: `global-rules/${ruleFile}`,
-            path: rulePath,
-            content: readFile(rulePath)
-          })
-        } catch (e) {
-          // Skip unreadable rule files
-        }
-      }
-    }
-  } catch (e) {
-    // Skip
-  }
+  loadRulesDir(path.join(projectDir, '.claude', 'rules'), 'rules')
+  loadRulesDir(path.join(projectDir, '.dario',  'rules'), 'rules')   // .dario wins
+  loadRulesDir(path.join(CLAUDE_DIR, 'rules'), 'global-rules')
+  loadRulesDir(path.join(DARIO_DIR,  'rules'), 'global-rules')       // .dario wins
 
   return contents
 }

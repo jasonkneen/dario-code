@@ -70,7 +70,8 @@ export async function executeToolUse(toolUse, tools, options = {}) {
       if (writeTools.includes(tool.name)) {
         const filePath = toolUse.input?.file_path || toolUse.input?.path || ''
         const normalised = filePath.replace(/\\/g, '/')
-        if (normalised.includes('.claude/skills') || normalised.includes('.claude/agents')) {
+        if (normalised.includes('.claude/skills') || normalised.includes('.claude/agents') ||
+            normalised.includes('.dario/skills')  || normalised.includes('.dario/agents')) {
           return {
             content: `Sandbox mode: writes to '${filePath}' are blocked. Skills and agent definitions cannot be modified while sandboxed.`,
             is_error: true
