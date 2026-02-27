@@ -16,7 +16,7 @@ import { getAllTools } from '../../tools/index.mjs'
 import { formatError } from '../../utils/errors.mjs'
 import { loadConfig, saveConfig, VERSION, isFastMode, setFastMode, getFastModeModel, getFastModeDisplayName, modelSupportsFastMode, getCompactThreshold } from '../../core/config.mjs'
 import { runHooks } from '../../core/hooks.mjs'
-import { getLocalCommands, processCommand as execCommand } from '../../cli/commands.mjs'
+import { getLocalCommands, processCommand as execCommand, getAvailableModels } from '../../cli/commands.mjs'
 import { glob } from 'glob'
 import { basename, relative, join } from 'path'
 import path from 'path'
@@ -34,6 +34,7 @@ import { ApprovedToolsManager } from './components/approved-tools-manager.mjs'
 import { SessionPicker } from './components/session-picker.mjs'
 import { PluginManager } from './components/plugin-manager.mjs'
 import { AgentManager } from './components/agent-manager.mjs'
+import { ProviderManager } from './components/provider-manager.mjs'
 import { ToolsManager } from './components/tools-manager.mjs'
 import { ContextManager } from './components/context-manager.mjs'
 import { SteeringQuestions } from './components/steering-questions.mjs'
@@ -160,16 +161,8 @@ function loadCustomCommands() {
   return customCommands
 }
 
-// Available models for selection
-const AVAILABLE_MODELS = [
-  { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', description: 'Latest Sonnet - Fast and capable' },
-  { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', description: 'Most capable - latest Opus' },
-  { id: 'claude-opus-4-5-20251101', name: 'Claude Opus 4.5', description: 'Previous Opus generation' },
-  { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', description: 'Fast and efficient' },
-  { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'Previous Sonnet generation' },
-  { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Legacy - lightweight' },
-  { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Legacy - previous flagship' }
-]
+// Available models for selection — merges Anthropic built-ins + enabled provider models
+const AVAILABLE_MODELS = getAvailableModels()
 
 /**
  * Message Selector - Select a message to fork conversation from
@@ -2029,6 +2022,7 @@ function ConversationApp({
   const [permissionsSnapshot, setPermissionsSnapshot] = useState({ allow: [], deny: [], ask: [] })
   const [showSessionPicker, setShowSessionPicker] = useState(false)
   const [showPluginManager, setShowPluginManager] = useState(false)
+  const [showProviderManager, setShowProviderManager] = useState(false)
   const [showAgentManager, setShowAgentManager] = useState(false)
   const [showToolsManager, setShowToolsManager] = useState(false)
   const [showContextManager, setShowContextManager] = useState(false)
@@ -2608,6 +2602,7 @@ function ConversationApp({
             showApprovedToolsManager: () => openApprovedToolsManager(),
             showSessionPicker: () => openSessionPicker(),
             showPluginManager: () => setShowPluginManager(true),
+            showProviderManager: () => setShowProviderManager(true),
             showAgentManager: () => setShowAgentManager(true),
             showToolsManager: () => setShowToolsManager(true),
             showContextManager: () => openContextManager(),
@@ -3015,6 +3010,18 @@ function ConversationApp({
         })
       : null,
 
+    // Provider Manager Overlay
+    showProviderManager
+      ? React.createElement(ProviderManager, {
+          key: 'provider-manager',
+          onCancel: () => setShowProviderManager(false),
+          onMessage: (msg) => {
+            const assistantMessage = createMessage('assistant', msg)
+            setMessages(prev => [...prev, assistantMessage])
+          },
+        })
+      : null,
+
     // Agent Manager Overlay
     showAgentManager
       ? React.createElement(AgentManager, {
@@ -3205,7 +3212,7 @@ function ConversationApp({
       : null,
 
     // Prompt input
-    !toolJSX?.shouldHidePromptInput && shouldShowPromptInput && !showMessageSelector && !showModelSelector && !showAuthSelector && !showFastModeToggle && !showMcpManager && !showConfigManager && !showApprovedToolsManager && !showSessionPicker && !showPluginManager && !showAgentManager && !showToolsManager && !showContextManager && !showSteeringQuestions
+    !toolJSX?.shouldHidePromptInput && shouldShowPromptInput && !showMessageSelector && !showModelSelector && !showAuthSelector && !showFastModeToggle && !showMcpManager && !showConfigManager && !showApprovedToolsManager && !showSessionPicker && !showPluginManager && !showProviderManager && !showAgentManager && !showToolsManager && !showContextManager && !showSteeringQuestions
       ? React.createElement(MemoizedPromptInput, {
           key: 'prompt-input',
           commands,
@@ -3227,7 +3234,7 @@ function ConversationApp({
       : null,
 
     // Prompt footer (CC 2.x feature)
-      !isLoading && !toolJSX?.shouldHidePromptInput && shouldShowPromptInput && !showMessageSelector && !showModelSelector && !showAuthSelector && !showFastModeToggle && !showMcpManager && !showConfigManager && !showApprovedToolsManager && !showSessionPicker && !showPluginManager && !showAgentManager && !showToolsManager && !showContextManager && !showSteeringQuestions
+      !isLoading && !toolJSX?.shouldHidePromptInput && shouldShowPromptInput && !showMessageSelector && !showModelSelector && !showAuthSelector && !showFastModeToggle && !showMcpManager && !showConfigManager && !showApprovedToolsManager && !showSessionPicker && !showPluginManager && !showProviderManager && !showAgentManager && !showToolsManager && !showContextManager && !showSteeringQuestions
         ? React.createElement(PromptFooter, {
             session: currentSession,
             prNumber: initialPrNumber,
