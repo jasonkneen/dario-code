@@ -478,7 +478,7 @@ Keyboard shortcuts:
   Ctrl+C     Exit (or clear input)
 
 Get started:
-  Ask Dario questions about your codebase
+  Ask Claude questions about your codebase
   Use @filename to reference files
   Use ! prefix for bash commands`
     }
@@ -934,10 +934,10 @@ function WorkspaceTips({ workspaceDir }) {
         ' to create an AGENTS.md file with instructions for Dario.'
       ),
       React.createElement(Text, { key: 'tip2', color: THEME.secondaryText },
-        '• Ask Dario questions about your codebase.'
+        '• Ask Claude questions about your codebase.'
       ),
       React.createElement(Text, { key: 'tip3', color: THEME.secondaryText },
-        '• Ask Dario to implement changes to your codebase.'
+        '• Ask Claude to implement changes to your codebase.'
       )
     )
   )

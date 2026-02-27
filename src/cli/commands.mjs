@@ -1273,7 +1273,7 @@ function handleHelp() {
   for (const [name, { description }] of Object.entries(COMMANDS)) {
     ui.print(`  /${name} - ${description}`)
   }
-  ui.print('\nYou can also ask Dario anything about your code or project.')
+  ui.print('\nYou can also ask Claude anything about your code or project.')
   return true
 }
 
