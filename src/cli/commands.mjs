@@ -7,6 +7,8 @@
  */
 
 import { VERSION, getModel, setModelOverride, loadConfig, saveConfig, getConfigValue, setConfigValue, loadSettings, saveSettings, isFastMode, setFastMode, modelSupportsFastMode, getFastModeModel, getFastModeDisplayName, getConfigDir, getClaudeConfigDir, loadClaudeMd, getDisabledContextItems, isContextItemDisabled, addCustomContextItem, removeCustomContextItem, getCustomContextItems } from '../core/config.mjs'
+import { getAllProviders, getProvider } from '../providers/registry.mjs'
+import { loadProviderConfig, getEnabledModels, setProviderKey, toggleModel, enableProvider, disableProvider } from '../providers/config.mjs'
 import { addMcpServer, removeMcpServer, getAllMcpServers, getSingleMcpServer } from '../integration/mcp.mjs'
 import { getSessionUsage } from '../api/streaming.mjs'
 import { vimMode } from '../keyboard/vim-mode.mjs'
@@ -50,6 +52,28 @@ export const AVAILABLE_MODELS = [
   { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Legacy - lightweight' },
   { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Legacy - previous flagship' }
 ]
+
+/**
+ * Get all available models: Anthropic built-ins + enabled provider models.
+ * Model IDs from non-Anthropic providers are prefixed as 'providerId:modelId'.
+ * @returns {Array} Array of { id, name, description, provider }
+ */
+export function getAvailableModels() {
+  const base = AVAILABLE_MODELS.map(m => ({ ...m, provider: 'anthropic' }))
+  try {
+    const providerModels = getEnabledModels()
+      .filter(m => m.provider !== 'anthropic')
+      .map(m => ({
+        id: m.prefixedId,
+        name: m.name,
+        description: `${getProvider(m.provider)?.name || m.provider} · ${m.category || ''}`.trim(),
+        provider: m.provider,
+      }))
+    return [...base, ...providerModels]
+  } catch {
+    return base
+  }
+}
 
 /**
  * Model context window limits
@@ -161,10 +185,11 @@ export const modelCommand = {
   async call(closeOverlay, context) {
     const currentModel = await getModel()
     const modelArg = context?.args?.[0]
+    const allModels = getAvailableModels()
 
     // If argument provided, try to set that model
     if (modelArg) {
-      const model = AVAILABLE_MODELS.find(m =>
+      const model = allModels.find(m =>
         m.id.includes(modelArg.toLowerCase()) ||
         m.name.toLowerCase().includes(modelArg.toLowerCase())
       )
@@ -173,7 +198,7 @@ export const modelCommand = {
         setModelOverride(model.id)
         return `Model set to ${model.name} (${model.id})`
       } else {
-        return `Unknown model: ${modelArg}\n\nAvailable models:\n${AVAILABLE_MODELS.map(m => `  ${m.name}: ${m.id}`).join('\n')}`
+        return `Unknown model: ${modelArg}\n\nAvailable models:\n${allModels.map(m => `  ${m.name}: ${m.id}`).join('\n')}`
       }
     }
 
@@ -183,13 +208,23 @@ export const modelCommand = {
       return null
     }
 
-    // Fallback for non-TUI: show text list
+    // Fallback for non-TUI: show text list grouped by provider
     let output = `Current model: ${currentModel}\n\nAvailable models:\n`
-    output += AVAILABLE_MODELS.map(m => {
-      const isCurrent = m.id === currentModel
-      return `  ${isCurrent ? '→ ' : '  '}${m.name} (${m.id})${isCurrent ? ' [current]' : ''}\n    ${m.description}`
-    }).join('\n')
-    output += '\n\nUsage: /model <name> - e.g., /model opus, /model haiku, /model sonnet'
+    const byProvider = {}
+    for (const m of allModels) {
+      const key = m.provider || 'anthropic'
+      if (!byProvider[key]) byProvider[key] = []
+      byProvider[key].push(m)
+    }
+    for (const [provider, models] of Object.entries(byProvider)) {
+      output += `\n  [${provider}]\n`
+      output += models.map(m => {
+        const isCurrent = m.id === currentModel
+        return `    ${isCurrent ? '→ ' : '  '}${m.name} (${m.id})${isCurrent ? ' [current]' : ''}`
+      }).join('\n')
+      output += '\n'
+    }
+    output += '\nUsage: /model <name> - e.g., /model opus, /model haiku, /model sonnet'
     return output
   },
 
@@ -2457,6 +2492,122 @@ export const debugCommand = {
 }
 
 // ============================================================================
+// /providers command
+// ============================================================================
+
+export const providersCommand = {
+  type: 'local',
+  name: 'providers',
+  description: 'Manage AI providers and their models',
+  isEnabled: true,
+  isHidden: false,
+  userFacingName() { return 'providers' },
+
+  async call(closeOverlay, context) {
+    const args = context?.args || []
+    const sub = args[0]?.toLowerCase()
+
+    // No subcommand — open TUI overlay if available
+    if (!sub) {
+      if (context?.showProviderManager) {
+        context.showProviderManager()
+        return null
+      }
+      // Fallback: text list
+      return this._listProviders()
+    }
+
+    if (sub === 'list') return this._listProviders()
+
+    if (sub === 'add') {
+      const id = args[1]
+      if (!id) return 'Usage: /providers add <id>  e.g. /providers add groq'
+      const def = getProvider(id)
+      if (!def) return `Unknown provider: ${id}\n\nAvailable: ${getAllProviders().map(p => p.id).join(', ')}`
+      enableProvider(id)
+      return `✓ Provider "${def.name}" enabled. Set key: /providers key ${id} <your-key>`
+    }
+
+    if (sub === 'remove') {
+      const id = args[1]
+      if (!id) return 'Usage: /providers remove <id>'
+      if (id === 'anthropic') return '✗ Cannot remove Anthropic (built-in)'
+      disableProvider(id)
+      return `✓ Provider "${id}" disabled`
+    }
+
+    if (sub === 'key') {
+      const id = args[1]
+      const key = args[2]
+      if (!id || !key) return 'Usage: /providers key <id> <api-key>'
+      const def = getProvider(id)
+      if (!def) return `Unknown provider: ${id}`
+      setProviderKey(id, key)
+      enableProvider(id)
+      return `✓ API key saved for ${def.name}`
+    }
+
+    if (sub === 'models') {
+      const id = args[1]
+      if (!id) return 'Usage: /providers models <id>'
+      const def = getProvider(id)
+      if (!def) return `Unknown provider: ${id}`
+      const config = loadProviderConfig()
+      const entry = config.providers.find(p => p.id === id) || {}
+      const enabled = new Set(entry.enabledModels || [])
+      let output = `\n  ${def.name} models:\n`
+      for (const m of def.models) {
+        const on = enabled.has(m.id)
+        output += `  ${on ? '✓' : '○'} ${m.name} (${m.id})\n`
+      }
+      output += '\nToggle: /providers toggle <id> <modelId>'
+      return output
+    }
+
+    if (sub === 'toggle') {
+      const id = args[1]
+      const modelId = args[2]
+      if (!id || !modelId) return 'Usage: /providers toggle <providerId> <modelId>'
+      const def = getProvider(id)
+      if (!def) return `Unknown provider: ${id}`
+      const model = def.models.find(m => m.id === modelId)
+      if (!model) return `Unknown model "${modelId}" for provider ${id}`
+      toggleModel(id, modelId)
+      const config = loadProviderConfig()
+      const entry = config.providers.find(p => p.id === id) || {}
+      const isNowEnabled = (entry.enabledModels || []).includes(modelId)
+      return `${isNowEnabled ? '✓ Enabled' : '○ Disabled'}: ${model.name}`
+    }
+
+    return `Unknown subcommand: ${sub}\nUsage: /providers [list|add|remove|key|models|toggle]`
+  },
+
+  _listProviders() {
+    const all = getAllProviders()
+    const config = loadProviderConfig()
+    const configMap = new Map(config.providers.map(p => [p.id, p]))
+
+    let output = '\n  AI Providers\n  ─────────────────────────────────────\n'
+    for (const p of all) {
+      const entry = configMap.get(p.id) || {}
+      const enabled = p.isBuiltin || entry.enabled === true
+      const hasKey = p.noKeyRequired || !!(entry.apiKey || process.env[p.apiKeyEnv])
+      const modelCount = p.isBuiltin
+        ? p.models.length
+        : (entry.enabledModels || []).length
+
+      const status = enabled ? (hasKey ? '✓' : '⚠') : '○'
+      output += `  ${status} ${p.name.padEnd(20)} ${enabled ? 'enabled' : 'disabled'}`
+      if (enabled && !hasKey && !p.noKeyRequired) output += ' (no key)'
+      if (enabled) output += `  ${modelCount} model${modelCount !== 1 ? 's' : ''}`
+      output += '\n'
+    }
+    output += '\nCommands: /providers add|remove|key|models|toggle'
+    return output
+  }
+}
+
+// ============================================================================
 // Command Export for Integration
 // ============================================================================
 
@@ -2497,6 +2648,7 @@ export function getLocalCommands() {
     debugCommand,
     reviewCommand,
     prCommentsCommand,
+    providersCommand,
   ]
 }
 
@@ -2772,6 +2924,9 @@ export default {
   statsCommand,
   renameCommand,
   debugCommand,
+
+  providersCommand,
+  getAvailableModels,
 
   // State management
   AVAILABLE_MODELS,
