@@ -96,6 +96,12 @@ class KeyboardManager extends EventEmitter {
     }
 
     // Ctrl+Z: Suspend operation
+    if (input === '\x02') {
+      // \x02 is Ctrl+B — unified background (CC 2.1 parity)
+      // Backgrounds both the current bash command AND any running agent simultaneously.
+      this.emit('background-all')
+    }
+
     if (input === '\x1a') {
       // \x1a is Ctrl+Z
       this.emit('suspend')
@@ -286,6 +292,7 @@ export const keyboardManager = new KeyboardManager()
 export function formatKeySequence(seq) {
   const map = {
     '\x01': 'Ctrl+A',
+    '\x02': 'Ctrl+B',
     '\x05': 'Ctrl+E',
     '\x0b': 'Ctrl+K',
     '\x12': 'Ctrl+R',
@@ -305,6 +312,7 @@ export function getShortcutsHelp() {
   return `
 Keyboard Shortcuts:
   Ctrl+R         - Search command history (reverse-i-search style)
+  Ctrl+B         - Background all (bash command + agent simultaneously)
   Ctrl+Z         - Suspend current operation (background)
   Tab            - Toggle thinking animation
   Shift+Tab      - Cycle through display modes

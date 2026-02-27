@@ -175,21 +175,45 @@ export async function spawnAgent(config, task, context = {}) {
     startedAt: null,
     completedAt: null,
     result: null,
-    error: null
+    error: null,
+    worktreePath: null,
+    worktreeBranch: null,
   }
 
   activeAgents.set(agentId, agent)
 
-  // In a full implementation, this would spawn an actual API call
-  // For now, we set up the agent state and return the configuration
   agent.status = AgentStatus.RUNNING
   agent.startedAt = new Date().toISOString()
+
+  // isolation:worktree support (CC 2.1.50 parity)
+  // If the agent definition declares `isolation: worktree`, run the agent
+  // inside an isolated git worktree. The worktree is auto-cleaned if the
+  // agent makes no file changes; preserved otherwise.
+  if (config.isolation === 'worktree') {
+    try {
+      const { createAgentWorktree } = await import('./worktree-isolation.mjs')
+      const agentName = config.name || agentId
+      const projectDir = context.cwd || process.cwd()
+      const { worktreePath, branch, cleanup } = createAgentWorktree(agentName, projectDir)
+      agent.worktreePath = worktreePath
+      agent.worktreeBranch = branch
+      // Store cleanup on the agent so it can be called after completion
+      agent._worktreeCleanup = cleanup
+      // Override cwd for this agent session
+      context = { ...context, cwd: worktreePath }
+    } catch (err) {
+      // Non-fatal: fall through to normal execution with a warning
+      process.stderr.write(`[agent] worktree isolation unavailable: ${err.message}\n`)
+    }
+  }
 
   return {
     agentId,
     config,
     task,
     status: agent.status,
+    worktreePath: agent.worktreePath,
+    worktreeBranch: agent.worktreeBranch,
     message: `Agent ${agentId} spawned for task: ${task.substring(0, 50)}...`
   }
 }

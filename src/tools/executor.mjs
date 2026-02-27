@@ -63,6 +63,22 @@ export async function executeToolUse(toolUse, tools, options = {}) {
       messageId: options.messageId
     }
 
+    // Sandbox skills protection (CC 2.1.38 parity):
+    // Block writes to .claude/skills/ when running in sandbox mode.
+    if (options.sandboxMode) {
+      const writeTools = ['Write', 'Edit', 'MultiEdit']
+      if (writeTools.includes(tool.name)) {
+        const filePath = toolUse.input?.file_path || toolUse.input?.path || ''
+        const normalised = filePath.replace(/\\/g, '/')
+        if (normalised.includes('.claude/skills') || normalised.includes('.claude/agents')) {
+          return {
+            content: `Sandbox mode: writes to '${filePath}' are blocked. Skills and agent definitions cannot be modified while sandboxed.`,
+            is_error: true
+          }
+        }
+      }
+    }
+
     // Validate command logic (e.g., security checks)
     if (typeof tool.validateInput === 'function') {
       const validation = await tool.validateInput(toolUse.input, context)

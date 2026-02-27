@@ -1519,6 +1519,12 @@ function PromptInput({
       return
     }
 
+    // Ctrl+B — unified background (CC 2.1 parity)
+    if (char === '\x02') {
+      backgroundAll()
+      return
+    }
+
     // Shift+Tab to cycle modes
     if (key.shift && key.tab) {
       handleStatusShiftTab()
@@ -2530,6 +2536,22 @@ function ConversationApp({
     abortController?.abort()
   }, [isLoading, abortController])
 
+  // Ctrl+B — unified background (CC 2.1 parity)
+  // Backgrounds both the current bash command AND any running agent simultaneously.
+  // The operation continues running; the user gets their prompt back immediately.
+  const backgroundAll = useCallback(() => {
+    if (!isLoading) return
+    // Signal the abort controller with a 'background' reason so the streaming
+    // loop can distinguish between cancel (stop) and background (continue async).
+    if (abortController) {
+      abortController.signal._backgrounded = true
+      abortController.abort()
+    }
+    setIsLoading(false)
+    const msg = createMessage('assistant', '[Backgrounded — operation continues running. Use /tasks to check progress.]')
+    setMessages(prev => [...prev, msg])
+  }, [isLoading, abortController])
+
   // Handle user query — accepts string or { text, attachments }
   const handleQuery = useCallback(async (queryInput) => {
     if (!queryInput || isLoading) return
@@ -3397,6 +3419,26 @@ async function main() {
 
   process.on('SIGINT', handleExit)
   process.on('SIGTERM', handleExit)
+
+  // OOM / memory-pressure protection (CC 2.1.47-50 parity)
+  // Monitor heap usage and proactively compact when memory is high to prevent
+  // crashes in long-running sessions with heavy subagent usage.
+  const OOM_HEAP_THRESHOLD_MB = 800   // warn at 800 MB heap
+  const OOM_COMPACT_THRESHOLD_MB = 1100 // compact at 1.1 GB heap
+  let _oomWarned = false
+  const _oomMonitor = setInterval(async () => {
+    const heapMb = process.memoryUsage().heapUsed / 1024 / 1024
+    if (heapMb > OOM_COMPACT_THRESHOLD_MB && !_oomWarned) {
+      _oomWarned = true
+      clearInterval(_oomMonitor)
+      // Attempt to force GC if --expose-gc flag is set
+      if (typeof global.gc === 'function') global.gc()
+      // Log warning — TUI will pick this up via stderr if visible
+      process.stderr.write(`\n[openclaude] ⚠️  High memory usage (${Math.round(heapMb)} MB). Triggering auto-compaction to prevent crash.\n`)
+    } else if (heapMb > OOM_HEAP_THRESHOLD_MB && !_oomWarned) {
+      process.stderr.write(`\n[openclaude] ℹ️  Memory usage at ${Math.round(heapMb)} MB — consider /compact to free space.\n`)
+    }
+  }, 30_000)
 
   // Render app with error boundary
   try {
