@@ -1063,6 +1063,69 @@ function MessageRenderer({
   )
 }
 
+// ★ Insight block detection + rendering
+// Matches backtick-wrapped or bare lines starting with ★ Insight ───…
+const INSIGHT_OPEN_RE = /^`?★\s*Insight\s*─+`?$/
+const INSIGHT_CLOSE_RE = /^`?─{10,}`?$/
+
+/**
+ * Split raw text into alternating plain-text and insight segments.
+ * Returns an array of { type: 'text' | 'insight', content: string }
+ */
+function parseInsightBlocks(text) {
+  const lines = text.split('\n')
+  const segments = []
+  let i = 0
+  let currentText = []
+
+  while (i < lines.length) {
+    if (INSIGHT_OPEN_RE.test(lines[i].trim())) {
+      // Flush accumulated text
+      if (currentText.length > 0) {
+        segments.push({ type: 'text', content: currentText.join('\n') })
+        currentText = []
+      }
+      // Collect insight body until closing rule
+      i++
+      const body = []
+      while (i < lines.length && !INSIGHT_CLOSE_RE.test(lines[i].trim())) {
+        body.push(lines[i])
+        i++
+      }
+      segments.push({ type: 'insight', content: body.join('\n').trim() })
+      i++ // skip closing rule
+    } else {
+      currentText.push(lines[i])
+      i++
+    }
+  }
+
+  if (currentText.length > 0) {
+    segments.push({ type: 'text', content: currentText.join('\n') })
+  }
+
+  return segments
+}
+
+/**
+ * Render a ★ Insight block with distinct visual treatment
+ */
+function InsightBlock({ content }) {
+  const bar = '─'.repeat(44)
+  return React.createElement(Box, {
+    flexDirection: 'column',
+    marginTop: 1,
+    marginLeft: 2,
+    marginBottom: 1,
+  },
+    React.createElement(Text, { color: '#F59E0B', bold: true }, `★ Insight ${bar}`),
+    React.createElement(Box, { marginLeft: 2, marginTop: 0 },
+      React.createElement(Text, { color: '#FCD34D' }, content)
+    ),
+    React.createElement(Text, { color: '#F59E0B' }, `${'─'.repeat(bar.length + 10)}`)
+  )
+}
+
 /**
  * Assistant Content Renderer
  */
@@ -1093,17 +1156,38 @@ function AssistantContentRenderer({
         shouldShowDot,
       })
 
-    case 'text':
+    case 'text': {
+      const segments = parseInsightBlocks(param.text)
+      // Fast path: no insight blocks — render as before
+      if (segments.length === 1 && segments[0].type === 'text') {
+        return React.createElement(Box, {
+          flexDirection: 'column',
+          marginTop: addMargin ? 1 : 0,
+          marginLeft: 2
+        },
+          React.createElement(Text, null,
+            shouldShowDot && React.createElement(Text, { color: THEME.claude }, '⏺ '),
+            param.text
+          )
+        )
+      }
+      // Mixed: render each segment in order
       return React.createElement(Box, {
         flexDirection: 'column',
         marginTop: addMargin ? 1 : 0,
-        marginLeft: 2
       },
-        React.createElement(Text, null,
-          shouldShowDot && React.createElement(Text, { color: THEME.claude }, '⏺ '),
-          param.text
+        segments.map((seg, idx) =>
+          seg.type === 'insight'
+            ? React.createElement(InsightBlock, { key: idx, content: seg.content })
+            : React.createElement(Box, { key: idx, marginLeft: 2 },
+                React.createElement(Text, null,
+                  idx === 0 && shouldShowDot && React.createElement(Text, { color: THEME.claude }, '⏺ '),
+                  seg.content
+                )
+              )
         )
       )
+    }
 
     case 'thinking':
       return React.createElement(Box, {
@@ -2607,6 +2691,7 @@ function ConversationApp({
             showToolsManager: () => setShowToolsManager(true),
             showContextManager: () => openContextManager(),
             showSteeringQuestions: (data) => openSteeringQuestions(data),
+            submitMessage: (text) => setTimeout(() => handleSubmit(text), 50),
           })
 
           // Handle command result

@@ -1269,6 +1269,14 @@ const COMMANDS = {
     description: 'Alias for /config',
     handler: (input, context) => configCommand.call(input.slice('/settings'.length).trim(), context)
   },
+  simplify: {
+    description: 'Simplify recently changed code (optional focus area)',
+    handler: (input, context) => simplifyCommand.call(null, { ...context, args: input.slice('/simplify'.length).trim().split(/\s+/).filter(Boolean) })
+  },
+  batch: {
+    description: 'Queue prompts to run sequentially: add <prompt> | run | list | clear',
+    handler: (input, context) => batchCommand.call(null, { ...context, args: input.slice('/batch'.length).trim().split(/\s+/).filter(Boolean) })
+  },
 }
 
 /**
@@ -2856,6 +2864,106 @@ export const prCommentsCommand = {
   }
 }
 
+/**
+ * /simplify command - Ask the AI to simplify recently changed code
+ */
+export const simplifyCommand = {
+  type: 'local',
+  name: 'simplify',
+  description: 'Ask the AI to simplify and clean up recent code changes',
+  argumentHint: '[focus area]',
+  isEnabled: true,
+  isHidden: false,
+
+  async call(closeOverlay, context) {
+    const focus = context?.args?.filter(Boolean).join(' ')
+
+    let prompt = 'Review the recently changed code and simplify it. Focus on reducing complexity, removing duplication, and improving readability. Make only the minimum changes needed — do not add new features or change behaviour.'
+    if (focus) {
+      prompt = `Review the recently changed code and simplify it, focusing on: ${focus}. Reduce complexity, remove duplication, and improve readability without changing behaviour.`
+    }
+
+    if (context?.submitMessage) {
+      context.submitMessage(prompt)
+      return null
+    }
+
+    // Non-TUI fallback: print the prompt the user would type
+    return `To simplify code, send this to the AI:\n\n${prompt}`
+  },
+
+  userFacingName() { return 'simplify' }
+}
+
+// In-memory batch queue (persists for the lifetime of the process)
+const batchQueue = []
+
+/**
+ * /batch command - Queue multiple prompts to run sequentially
+ */
+export const batchCommand = {
+  type: 'local',
+  name: 'batch',
+  description: 'Queue prompts to run sequentially: add <prompt> | run | list | clear',
+  argumentHint: '[add <prompt> | run | list | clear]',
+  isEnabled: true,
+  isHidden: false,
+
+  async call(closeOverlay, context) {
+    const args = context?.args?.filter(Boolean) || []
+    const sub = args[0]
+
+    if (!sub || sub === 'list') {
+      if (batchQueue.length === 0) {
+        return '\n  Batch Queue\n  ' + '─'.repeat(40) + '\n  Queue is empty\n\n  Usage:\n    /batch add <prompt>  Add a prompt to the queue\n    /batch run           Run all queued prompts\n    /batch clear         Clear the queue\n'
+      }
+      let out = '\n  Batch Queue (' + batchQueue.length + ' items)\n  ' + '─'.repeat(40) + '\n'
+      batchQueue.forEach((p, i) => {
+        const preview = p.length > 70 ? p.slice(0, 70) + '…' : p
+        out += `  ${i + 1}. ${preview}\n`
+      })
+      out += '  ' + '─'.repeat(40) + '\n  Run with: /batch run\n'
+      return out
+    }
+
+    if (sub === 'clear') {
+      const count = batchQueue.length
+      batchQueue.length = 0
+      return count > 0 ? `Batch queue cleared (${count} items removed)` : 'Batch queue was already empty'
+    }
+
+    if (sub === 'add') {
+      const prompt = args.slice(1).join(' ').trim()
+      if (!prompt) return 'Usage: /batch add <prompt>'
+      batchQueue.push(prompt)
+      return `Added to batch queue (#${batchQueue.length}): ${prompt.slice(0, 80)}${prompt.length > 80 ? '…' : ''}`
+    }
+
+    if (sub === 'run') {
+      if (batchQueue.length === 0) {
+        return 'Batch queue is empty. Add prompts with /batch add <prompt>'
+      }
+      if (!context?.submitMessage) {
+        const items = batchQueue.splice(0)
+        return `Batch (${items.length} prompts) — run these in order:\n\n${items.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
+      }
+      // Drain the queue and submit each prompt with a delay so the AI can finish each one
+      const items = batchQueue.splice(0)
+      items.forEach((prompt, i) => {
+        setTimeout(() => context.submitMessage(prompt), i * 200)
+      })
+      return `Running ${items.length} queued prompt${items.length === 1 ? '' : 's'} sequentially…`
+    }
+
+    // Treat unrecognised sub-command as an implicit "add"
+    const prompt = args.join(' ').trim()
+    batchQueue.push(prompt)
+    return `Added to batch queue (#${batchQueue.length}): ${prompt.slice(0, 80)}${prompt.length > 80 ? '…' : ''}`
+  },
+
+  userFacingName() { return 'batch' }
+}
+
 export const fastCommand = {
   type: 'local',
   name: 'fast',
@@ -2926,6 +3034,8 @@ export default {
   debugCommand,
 
   providersCommand,
+  simplifyCommand,
+  batchCommand,
   getAvailableModels,
 
   // State management

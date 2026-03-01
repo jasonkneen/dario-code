@@ -1,0 +1,167 @@
+[
+  {
+    "id": "anthropic",
+    "name": "Anthropic",
+    "baseURL": "https://api.anthropic.com",
+    "apiKeyEnv": "ANTHROPIC_API_KEY",
+    "apiKeyURL": "https://console.anthropic.com/keys",
+    "sdkCompat": "anthropic",
+    "isLocal": false,
+    "isBuiltin": true,
+    "models": [
+      { "id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6", "category": "latest", "contextWindow": 200000 },
+      { "id": "claude-opus-4-6", "name": "Claude Opus 4.6", "category": "latest", "contextWindow": 200000 },
+      { "id": "claude-opus-4-5-20251101", "name": "Claude Opus 4.5", "category": "previous", "contextWindow": 200000 },
+      { "id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5", "category": "latest", "contextWindow": 200000 },
+      { "id": "claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "category": "previous", "contextWindow": 200000 },
+      { "id": "claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku", "category": "previous", "contextWindow": 200000 },
+      { "id": "claude-3-opus-20240229", "name": "Claude 3 Opus", "category": "previous", "contextWindow": 200000 }
+    ]
+  },
+  {
+    "id": "openrouter",
+    "name": "OpenRouter",
+    "baseURL": "https://openrouter.ai/api/v1",
+    "apiKeyEnv": "OPENROUTER_API_KEY",
+    "apiKeyURL": "https://openrouter.ai/keys",
+    "sdkCompat": "openai",
+    "isLocal": false,
+    "models": [
+      { "id": "openai/gpt-4o", "name": "GPT-4o", "category": "chat", "contextWindow": 128000 },
+      { "id": "openai/gpt-4o-mini", "name": "GPT-4o Mini", "category": "chat", "contextWindow": 128000 },
+      { "id": "openai/o3-mini", "name": "o3-mini", "category": "reasoning", "contextWindow": 200000 },
+      { "id": "google/gemini-2.0-flash-001", "name": "Gemini 2.0 Flash", "category": "chat", "contextWindow": 1048576 },
+      { "id": "google/gemini-2.5-pro-preview-03-25", "name": "Gemini 2.5 Pro", "category": "chat", "contextWindow": 1048576 },
+      { "id": "meta-llama/llama-4-maverick", "name": "Llama 4 Maverick", "category": "chat", "contextWindow": 524288 },
+      { "id": "meta-llama/llama-4-scout", "name": "Llama 4 Scout", "category": "chat", "contextWindow": 524288 },
+      { "id": "deepseek/deepseek-r1", "name": "DeepSeek R1", "category": "reasoning", "contextWindow": 163840 },
+      { "id": "deepseek/deepseek-chat-v3-0324", "name": "DeepSeek V3", "category": "chat", "contextWindow": 163840 },
+      { "id": "x-ai/grok-3", "name": "Grok 3", "category": "chat", "contextWindow": 131072 },
+      { "id": "x-ai/grok-3-mini", "name": "Grok 3 Mini", "category": "reasoning", "contextWindow": 131072 },
+      { "id": "anthropic/claude-sonnet-4-6", "name": "Claude Sonnet 4.6 (OR)", "category": "chat", "contextWindow": 200000 },
+      { "id": "anthropic/claude-opus-4-6", "name": "Claude Opus 4.6 (OR)", "category": "chat", "contextWindow": 200000 },
+      { "id": "mistralai/mistral-large-2411", "name": "Mistral Large 24.11", "category": "chat", "contextWindow": 131072 },
+      { "id": "mistralai/codestral-2501", "name": "Codestral 25.01", "category": "code", "contextWindow": 262144 }
+    ]
+  },
+  {
+    "id": "groq",
+    "name": "Groq",
+    "baseURL": "https://api.groq.com/openai/v1",
+    "apiKeyEnv": "GROQ_API_KEY",
+    "apiKeyURL": "https://console.groq.com/keys",
+    "sdkCompat": "openai",
+    "isLocal": false,
+    "models": [
+      { "id": "llama-3.3-70b-versatile", "name": "Llama 3.3 70B Versatile", "category": "chat", "contextWindow": 128000 },
+      { "id": "llama-3.1-8b-instant", "name": "Llama 3.1 8B Instant", "category": "chat", "contextWindow": 128000 },
+      { "id": "deepseek-r1-distill-llama-70b", "name": "DeepSeek R1 Distill 70B", "category": "reasoning", "contextWindow": 131072 },
+      { "id": "gemma2-9b-it", "name": "Gemma 2 9B IT", "category": "chat", "contextWindow": 8192 },
+      { "id": "qwen-qwq-32b", "name": "QwQ 32B", "category": "reasoning", "contextWindow": 131072 },
+      { "id": "compound-beta", "name": "Compound Beta (Agentic)", "category": "agentic", "contextWindow": 131072 }
+    ]
+  },
+  {
+    "id": "mistral",
+    "name": "Mistral AI",
+    "baseURL": "https://api.mistral.ai/v1",
+    "apiKeyEnv": "MISTRAL_API_KEY",
+    "apiKeyURL": "https://console.mistral.ai/api-keys",
+    "sdkCompat": "openai",
+    "isLocal": false,
+    "models": [
+      { "id": "mistral-large-latest", "name": "Mistral Large", "category": "chat", "contextWindow": 131072 },
+      { "id": "mistral-small-latest", "name": "Mistral Small", "category": "chat", "contextWindow": 131072 },
+      { "id": "codestral-latest", "name": "Codestral", "category": "code", "contextWindow": 262144 },
+      { "id": "magistral-medium-2506", "name": "Magistral Medium", "category": "reasoning", "contextWindow": 40000 },
+      { "id": "magistral-small-2506", "name": "Magistral Small", "category": "reasoning", "contextWindow": 40000 }
+    ]
+  },
+  {
+    "id": "xai",
+    "name": "xAI",
+    "baseURL": "https://api.x.ai/v1",
+    "apiKeyEnv": "XAI_API_KEY",
+    "apiKeyURL": "https://console.x.ai",
+    "sdkCompat": "openai",
+    "isLocal": false,
+    "models": [
+      { "id": "grok-3-latest", "name": "Grok 3", "category": "chat", "contextWindow": 131072 },
+      { "id": "grok-3-mini-latest", "name": "Grok 3 Mini", "category": "reasoning", "contextWindow": 131072 },
+      { "id": "grok-2-1212", "name": "Grok 2", "category": "chat", "contextWindow": 131072 }
+    ]
+  },
+  {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "baseURL": "https://api.deepseek.com/v1",
+    "apiKeyEnv": "DEEPSEEK_API_KEY",
+    "apiKeyURL": "https://platform.deepseek.com/api_keys",
+    "sdkCompat": "openai",
+    "isLocal": false,
+    "models": [
+      { "id": "deepseek-chat", "name": "DeepSeek V3", "category": "chat", "contextWindow": 65536 },
+      { "id": "deepseek-reasoner", "name": "DeepSeek R1", "category": "reasoning", "contextWindow": 65536 }
+    ]
+  },
+  {
+    "id": "together",
+    "name": "Together AI",
+    "baseURL": "https://api.together.xyz/v1",
+    "apiKeyEnv": "TOGETHER_API_KEY",
+    "apiKeyURL": "https://api.together.ai/settings/api-keys",
+    "sdkCompat": "openai",
+    "isLocal": false,
+    "models": [
+      { "id": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", "name": "Llama 3.1 70B Turbo", "category": "chat", "contextWindow": 131072 },
+      { "id": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo", "name": "Llama 3.1 8B Turbo", "category": "chat", "contextWindow": 131072 },
+      { "id": "Qwen/Qwen2.5-72B-Instruct-Turbo", "name": "Qwen 2.5 72B Turbo", "category": "chat", "contextWindow": 32768 },
+      { "id": "deepseek-ai/DeepSeek-R1", "name": "DeepSeek R1", "category": "reasoning", "contextWindow": 65536 }
+    ]
+  },
+  {
+    "id": "moonshot",
+    "name": "Moonshot AI",
+    "baseURL": "https://api.moonshot.cn/v1",
+    "apiKeyEnv": "MOONSHOT_API_KEY",
+    "apiKeyURL": "https://platform.moonshot.cn/console/api-keys",
+    "sdkCompat": "openai",
+    "isLocal": false,
+    "models": [
+      { "id": "moonshot-v1-8k", "name": "Moonshot v1 8K", "category": "chat", "contextWindow": 8192 },
+      { "id": "moonshot-v1-32k", "name": "Moonshot v1 32K", "category": "chat", "contextWindow": 32768 },
+      { "id": "moonshot-v1-128k", "name": "Moonshot v1 128K", "category": "chat", "contextWindow": 131072 }
+    ]
+  },
+  {
+    "id": "ollama",
+    "name": "Ollama",
+    "baseURL": "http://localhost:11434/v1",
+    "apiKeyEnv": null,
+    "apiKeyURL": null,
+    "sdkCompat": "openai",
+    "isLocal": true,
+    "models": [
+      { "id": "llama3.2", "name": "Llama 3.2 3B", "category": "chat", "contextWindow": 131072 },
+      { "id": "llama3.2:1b", "name": "Llama 3.2 1B", "category": "chat", "contextWindow": 131072 },
+      { "id": "llama3.1", "name": "Llama 3.1 8B", "category": "chat", "contextWindow": 131072 },
+      { "id": "qwen2.5-coder", "name": "Qwen 2.5 Coder 7B", "category": "code", "contextWindow": 32768 },
+      { "id": "mistral", "name": "Mistral 7B", "category": "chat", "contextWindow": 32768 },
+      { "id": "gemma3", "name": "Gemma 3 4B", "category": "chat", "contextWindow": 131072 },
+      { "id": "deepseek-r1:7b", "name": "DeepSeek R1 7B", "category": "reasoning", "contextWindow": 131072 },
+      { "id": "phi4", "name": "Phi-4 14B", "category": "chat", "contextWindow": 16384 }
+    ]
+  },
+  {
+    "id": "lmstudio",
+    "name": "LM Studio",
+    "baseURL": "http://localhost:1234/v1",
+    "apiKeyEnv": null,
+    "apiKeyURL": null,
+    "sdkCompat": "openai",
+    "isLocal": true,
+    "models": [
+      { "id": "local-model", "name": "Local Model (auto-detect)", "category": "chat", "contextWindow": 32768 }
+    ]
+  }
+]
