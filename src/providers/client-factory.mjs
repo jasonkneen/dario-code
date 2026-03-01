@@ -32,6 +32,55 @@ function parseModelId(prefixedId) {
  * @param {Object} providerEntry - Provider with apiKey + baseURL
  * @returns {Object} Fake client with messages.stream()
  */
+const localModelCache = new Map()
+
+/**
+ * Resolve local provider model aliases (e.g. "qwen2.5-coder" -> "qwen2.5-coder:7b").
+ * Only applied for local providers (Ollama / LM Studio) and only when the
+ * requested model has no explicit tag suffix.
+ */
+async function resolveLocalModelId(providerEntry, baseURL, apiKey, requestedModel) {
+  if (!providerEntry?.isLocal) return requestedModel
+  if (!requestedModel || requestedModel.includes(':')) return requestedModel
+
+  const now = Date.now()
+  const cacheKey = `${providerEntry.id}:${baseURL}`
+  const cached = localModelCache.get(cacheKey)
+
+  let installedModels = []
+  if (cached && now - cached.timestamp < 15_000) {
+    installedModels = cached.models
+  } else {
+    try {
+      const headers = {}
+      if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+
+      const res = await fetch(`${baseURL}/models`, { headers })
+      if (res.ok) {
+        const json = await res.json()
+        installedModels = (json?.data || [])
+          .map(m => m?.id)
+          .filter(Boolean)
+      }
+    } catch {
+      // Ignore lookup failures; we'll use the requested model as-is.
+    }
+    localModelCache.set(cacheKey, { timestamp: now, models: installedModels })
+  }
+
+  if (installedModels.length === 0) return requestedModel
+
+  // Exact match available as-is.
+  if (installedModels.includes(requestedModel)) return requestedModel
+
+  // Best-effort alias: pick installed tag variant (prefer :latest).
+  const prefixMatches = installedModels.filter(id => id.startsWith(`${requestedModel}:`))
+  if (prefixMatches.length === 0) return requestedModel
+
+  const latest = prefixMatches.find(id => id.endsWith(':latest'))
+  return latest || prefixMatches[0]
+}
+
 function buildOpenAICompatClient(providerEntry) {
   const baseURL = providerEntry.baseURL.replace(/\/$/, '')
   const apiKey = providerEntry.apiKey
@@ -82,13 +131,6 @@ function buildOpenAICompatClient(providerEntry) {
           }
         }
 
-        const openAIBody = {
-          model: anthropicRequest.model,
-          max_tokens: anthropicRequest.max_tokens,
-          messages,
-          stream: true,
-        }
-
         // Return async iterable that yields Anthropic-compatible events
         return {
           [Symbol.asyncIterator]() {
@@ -100,9 +142,25 @@ function buildOpenAICompatClient(providerEntry) {
             let outputTokens = 0
 
             const fetchStream = async function* () {
+              const resolvedModel = await resolveLocalModelId(
+                providerEntry,
+                baseURL,
+                apiKey,
+                anthropicRequest.model,
+              )
+
+              const openAIBody = {
+                model: resolvedModel,
+                max_tokens: anthropicRequest.max_tokens,
+                messages,
+                stream: true,
+              }
+
               const headers = {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`,
+              }
+              if (apiKey) {
+                headers.Authorization = `Bearer ${apiKey}`
               }
 
               const response = await fetch(`${baseURL}/chat/completions`, {

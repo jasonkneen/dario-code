@@ -17,6 +17,7 @@ import { formatError } from '../../utils/errors.mjs'
 import { loadConfig, saveConfig, VERSION, isFastMode, setFastMode, getFastModeModel, getFastModeDisplayName, modelSupportsFastMode, getCompactThreshold } from '../../core/config.mjs'
 import { runHooks } from '../../core/hooks.mjs'
 import { getLocalCommands, processCommand as execCommand, getAvailableModels } from '../../cli/commands.mjs'
+import { getAllProviders } from '../../providers/registry.mjs'
 import { glob } from 'glob'
 import { basename, relative, join } from 'path'
 import path from 'path'
@@ -161,9 +162,6 @@ function loadCustomCommands() {
   return customCommands
 }
 
-// Available models for selection — merges Anthropic built-ins + enabled provider models
-const AVAILABLE_MODELS = getAvailableModels()
-
 /**
  * Message Selector - Select a message to fork conversation from
  */
@@ -251,28 +249,110 @@ function MessageSelector({ messages, onSelect, onCancel }) {
 
 /**
  * Interactive Model Selector Overlay
+ * Tabbed by provider to mirror other settings/question interfaces.
  */
 function ModelSelector({ currentModel, onSelect, onCancel }) {
-  const [selectedIndex, setSelectedIndex] = useState(
-    Math.max(0, AVAILABLE_MODELS.findIndex(m => m.id === currentModel))
-  )
+  const allModels = useMemo(() => getAvailableModels(), [])
+
+  const providerNameMap = useMemo(() => {
+    const map = new Map([['anthropic', 'Anthropic']])
+    for (const provider of getAllProviders()) {
+      map.set(provider.id, provider.name)
+    }
+    return map
+  }, [])
+
+  const modelsByProvider = useMemo(() => {
+    const map = new Map()
+    for (const model of allModels) {
+      const providerId = model.provider || 'anthropic'
+      if (!map.has(providerId)) map.set(providerId, [])
+      map.get(providerId).push(model)
+    }
+    return map
+  }, [allModels])
+
+  const providers = useMemo(() => Array.from(modelsByProvider.keys()), [modelsByProvider])
+
+  const [activeProvider, setActiveProvider] = useState(() => {
+    const current = allModels.find(m => m.id === currentModel)
+    return current?.provider || providers[0] || 'anthropic'
+  })
+  const [selectedModelId, setSelectedModelId] = useState(currentModel)
+
+  useEffect(() => {
+    if (providers.length > 0 && !providers.includes(activeProvider)) {
+      setActiveProvider(providers[0])
+    }
+  }, [providers, activeProvider])
+
+  const filteredModels = modelsByProvider.get(activeProvider) || []
+
+  useEffect(() => {
+    if (filteredModels.length === 0) return
+    if (filteredModels.some(m => m.id === selectedModelId)) return
+
+    const currentInTab = filteredModels.find(m => m.id === currentModel)
+    setSelectedModelId(currentInTab?.id || filteredModels[0].id)
+  }, [filteredModels, selectedModelId, currentModel])
+
+  const selectedIndex = Math.max(0, filteredModels.findIndex(m => m.id === selectedModelId))
+  const selectedModel = filteredModels[selectedIndex] || filteredModels[0] || null
+
+  const providerLabel = useCallback((providerId) => {
+    if (!providerId) return 'Unknown'
+    return providerNameMap.get(providerId) || `${providerId[0].toUpperCase()}${providerId.slice(1)}`
+  }, [providerNameMap])
+
+  const cycleProvider = useCallback((direction) => {
+    if (providers.length <= 1) return
+
+    const idx = Math.max(0, providers.indexOf(activeProvider))
+    const nextIdx = (idx + direction + providers.length) % providers.length
+    const nextProvider = providers[nextIdx]
+    setActiveProvider(nextProvider)
+
+    const nextModels = modelsByProvider.get(nextProvider) || []
+    if (nextModels.length === 0) return
+
+    if (!nextModels.some(m => m.id === selectedModelId)) {
+      const currentInNext = nextModels.find(m => m.id === currentModel)
+      setSelectedModelId(currentInNext?.id || nextModels[0].id)
+    }
+  }, [providers, activeProvider, modelsByProvider, selectedModelId, currentModel])
 
   useInput((char, key) => {
     if (key.escape) {
       onCancel()
       return
     }
+
+    if (key.leftArrow || (key.shift && key.tab)) {
+      cycleProvider(-1)
+      return
+    }
+
+    if (key.rightArrow || key.tab) {
+      cycleProvider(1)
+      return
+    }
+
     if (key.upArrow) {
-      setSelectedIndex(i => Math.max(0, i - 1))
+      if (selectedIndex > 0) {
+        setSelectedModelId(filteredModels[selectedIndex - 1].id)
+      }
       return
     }
+
     if (key.downArrow) {
-      setSelectedIndex(i => Math.min(AVAILABLE_MODELS.length - 1, i + 1))
+      if (selectedIndex < filteredModels.length - 1) {
+        setSelectedModelId(filteredModels[selectedIndex + 1].id)
+      }
       return
     }
-    if (key.return) {
-      onSelect(AVAILABLE_MODELS[selectedIndex])
-      return
+
+    if (key.return && selectedModel) {
+      onSelect(selectedModel)
     }
   })
 
@@ -281,41 +361,54 @@ function ModelSelector({ currentModel, onSelect, onCancel }) {
     borderStyle: 'round',
     borderColor: THEME.claude,
     padding: 1,
-    marginTop: 1
+    marginTop: 1,
   },
     React.createElement(Text, { key: 'title', bold: true, color: THEME.claude }, '⏺ Select Model'),
     React.createElement(Text, { key: 'current', dimColor: true }, 'Current: ', currentModel),
-    React.createElement(Box, { key: 'spacer', marginTop: 1 }),
-    React.createElement(Box, { key: 'models', flexDirection: 'column' },
-      AVAILABLE_MODELS.map((model, idx) => {
-        const isSelected = idx === selectedIndex
-        const isCurrent = model.id === currentModel
-        return React.createElement(Box, {
-          key: model.id,
-          flexDirection: 'column',
-          marginBottom: 0
-        },
-          React.createElement(Text, {
-            color: isSelected ? THEME.suggestion : (isCurrent ? THEME.success : undefined),
-            inverse: isSelected,
-            bold: isCurrent
-          },
-            isSelected ? ' → ' : '   ',
-            model.name,
-            ' (',
-            model.id.split('-').slice(-1)[0],
-            ')',
-            isCurrent ? ' [current]' : ''
-          ),
-          React.createElement(Text, {
-            dimColor: !isSelected,
-            color: isSelected ? THEME.suggestion : undefined
-          }, '     ', model.description)
-        )
+
+    React.createElement(Box, { key: 'tabs', flexDirection: 'row', marginTop: 1 },
+      ...providers.map((providerId) => {
+        const isActive = providerId === activeProvider
+        const modelCount = (modelsByProvider.get(providerId) || []).length
+        return React.createElement(Text, {
+          key: `provider-tab-${providerId}`,
+          bold: isActive,
+          color: isActive ? THEME.text : THEME.secondaryText,
+          inverse: isActive,
+        }, ` ${providerLabel(providerId)} (${modelCount}) `, React.createElement(Text, { color: THEME.secondaryText }, '  '))
       })
     ),
+
+    React.createElement(Box, { key: 'models', flexDirection: 'column', marginTop: 1 },
+      filteredModels.length === 0
+        ? React.createElement(Text, { key: 'none', color: THEME.secondaryText }, '  No models enabled for this provider')
+        : filteredModels.map((model) => {
+            const isSelected = model.id === selectedModel?.id
+            const isCurrent = model.id === currentModel
+            return React.createElement(Box, {
+              key: model.id,
+              flexDirection: 'column',
+              marginBottom: 0,
+            },
+              React.createElement(Text, {
+                color: isSelected ? THEME.suggestion : (isCurrent ? THEME.success : undefined),
+                inverse: isSelected,
+                bold: isCurrent,
+              },
+                isSelected ? ' → ' : '   ',
+                model.name,
+                isCurrent ? ' [current]' : ''
+              ),
+              React.createElement(Text, {
+                dimColor: !isSelected,
+                color: isSelected ? THEME.suggestion : THEME.secondaryText,
+              }, `     ${model.id}${model.description ? ` · ${model.description}` : ''}`)
+            )
+          })
+    ),
+
     React.createElement(Box, { key: 'help', marginTop: 1 },
-      React.createElement(Text, { dimColor: true }, '↑↓ to navigate · Enter to select · Esc to cancel')
+      React.createElement(Text, { dimColor: true }, '↑↓ models · ←→/Tab providers · Enter select · Esc cancel')
     )
   )
 }
@@ -422,7 +515,7 @@ const standardCommands = [
       const commandHelp = [
         ['help',           'Show this help message'],
         ['init',           'Create an AGENTS.md file for this project'],
-        ['model',          'Switch AI models (or /model <name>)'],
+        ['model',          'Switch AI models (or /models, /model <name>)'],
         ['login',          'Sign in to Dario'],
         ['logout',         'Sign out of Dario'],
         ['auth',           'Show authentication status'],

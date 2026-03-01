@@ -178,6 +178,7 @@ export function getTodoStatistics() {
 export const modelCommand = {
   type: 'local',
   name: 'model',
+  aliases: ['models'],
   description: 'Switch between AI models',
   isEnabled: true,
   isHidden: false,
@@ -1150,6 +1151,10 @@ const COMMANDS = {
   model: {
     description: 'Switch between AI models',
     handler: (input) => modelCommand.call(null, { args: input.slice('/model'.length).trim().split(/\s+/) })
+  },
+  models: {
+    description: 'Alias for /model',
+    handler: (input) => modelCommand.call(null, { args: input.slice('/models'.length).trim().split(/\s+/) })
   },
   auth: {
     description: 'Show authentication status',

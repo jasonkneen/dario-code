@@ -6,9 +6,40 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { execFileSync } from 'child_process'
 import { BUILTIN_PROVIDERS, getProvider } from './registry.mjs'
 
 const CONFIG_PATH = path.join(os.homedir(), '.dario', 'providers.json')
+
+/**
+ * Discover installed models from local OpenAI-compatible providers
+ * (e.g. Ollama / LM Studio via /v1/models).
+ * Synchronous by design so model listing remains synchronous.
+ */
+function discoverLocalModels(provider) {
+  if (!provider?.isLocal || !provider?.baseURL) return []
+
+  try {
+    const base = provider.baseURL.replace(/\/$/, '')
+    const body = execFileSync('curl', ['-sS', '--max-time', '1.5', `${base}/models`], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+
+    const parsed = JSON.parse(body)
+    const modelIds = (parsed?.data || [])
+      .map(m => m?.id)
+      .filter(Boolean)
+
+    return modelIds.map(id => ({
+      id,
+      name: id,
+      category: 'local',
+    }))
+  } catch {
+    return []
+  }
+}
 
 /**
  * Load provider config from disk.
@@ -75,17 +106,49 @@ export function getEnabledModels() {
       for (const m of provider.models) {
         models.push({ ...m, provider: provider.id, prefixedId: m.id })
       }
-    } else {
-      // Other providers — only expose explicitly enabled models
-      const enabled = new Set(provider.enabledModels)
-      for (const m of provider.models) {
-        if (enabled.has(m.id)) {
+      continue
+    }
+
+    // Local providers (Ollama / LM Studio): prefer installed models from runtime.
+    if (provider.isLocal) {
+      const discovered = discoverLocalModels(provider)
+      if (discovered.length > 0) {
+        for (const m of discovered) {
           models.push({
             ...m,
             provider: provider.id,
             prefixedId: `${provider.id}:${m.id}`,
           })
         }
+        continue
+      }
+    }
+
+    // Other providers — only expose explicitly enabled models.
+    const enabled = new Set(provider.enabledModels)
+    const known = new Map((provider.models || []).map(m => [m.id, m]))
+
+    // Include known model definitions that are enabled.
+    for (const m of provider.models || []) {
+      if (enabled.has(m.id)) {
+        models.push({
+          ...m,
+          provider: provider.id,
+          prefixedId: `${provider.id}:${m.id}`,
+        })
+      }
+    }
+
+    // Include custom enabled model IDs not present in built-in definitions.
+    for (const modelId of enabled) {
+      if (!known.has(modelId)) {
+        models.push({
+          id: modelId,
+          name: modelId,
+          category: 'custom',
+          provider: provider.id,
+          prefixedId: `${provider.id}:${modelId}`,
+        })
       }
     }
   }
