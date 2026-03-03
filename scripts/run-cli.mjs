@@ -12,6 +12,11 @@ const passthrough = []
 for (let i = 0; i < args.length; i++) {
   const arg = args[i]
   if (arg === '--tui') {
+    const nextArg = args[i + 1]
+    if (!nextArg || nextArg.startsWith('-')) {
+      console.error('Missing value for --tui. Usage: --tui <name>')
+      process.exit(1)
+    }
     tui = args[i + 1]
     i++
     continue
@@ -35,4 +40,3 @@ const cliPath = path.resolve(process.cwd(), 'cli.mjs')
 process.argv = [process.argv[0], cliPath, ...passthrough]
 
 await import(pathToFileURL(cliPath).href)
-

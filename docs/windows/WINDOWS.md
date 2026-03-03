@@ -151,7 +151,7 @@ Install Git Bash (choose one option):
 4. Close and reopen your terminal.
 5. Verify Git Bash:
    - `bash --version`
-   - `where bash`
+   - `Get-Command bash`
 
 Typical installed paths:
 

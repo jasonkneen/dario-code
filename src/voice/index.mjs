@@ -22,8 +22,10 @@ class VoiceSession extends EventEmitter {
 
     if (!isAvailable()) {
       const installHint = process.platform === 'win32'
-        ? 'choco install sox or winget install SoX.SoX'
-        : 'brew install sox'
+        ? 'winget install --id sox_ng.sox_ng --exact or choco install sox_ng'
+        : process.platform === 'darwin'
+          ? 'brew install sox'
+          : 'sudo apt install sox (or use your distro package manager)'
       this.emit('error', new Error(`sox is not installed. Run: ${installHint}`))
       return
     }

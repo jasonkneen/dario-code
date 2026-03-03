@@ -3340,6 +3340,7 @@ function ConversationApp({
     setAbortController(controller)
     let pendingAssistantMessage = null
     let pendingAssistantTimer = null
+    let shouldFlushPendingAssistant = true
 
     const applyAssistantMessage = (assistantMessage) => {
       setMessages(prev => {
@@ -3482,6 +3483,8 @@ function ConversationApp({
       flushAssistantMessage()
     } catch (error) {
       if (error.name !== 'AbortError') {
+        shouldFlushPendingAssistant = false
+        pendingAssistantMessage = null
         // Show error as assistant message with helpful context
         const errorText = error.message || formatError(error) || 'Unknown error occurred'
 
@@ -3509,7 +3512,9 @@ function ConversationApp({
         clearTimeout(pendingAssistantTimer)
         pendingAssistantTimer = null
       }
-      flushAssistantMessage()
+      if (shouldFlushPendingAssistant) {
+        flushAssistantMessage()
+      }
       setIsLoading(false)
       setAbortController(null)
       // Auto-submit queued message if one exists

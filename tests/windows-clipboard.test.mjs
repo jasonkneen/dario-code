@@ -11,21 +11,60 @@ import { getImageFromClipboard } from '../src/mentions/index.mjs'
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
-async function waitForClipboardRawImage(timeoutMs = 1500) {
+function buffersEqual(a, b) {
+  if (!a || !b) return false
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
+function sizesEqual(a, b) {
+  return Boolean(a && b && a.width === b.width && a.height === b.height)
+}
+
+async function waitForClipboardRawImage(expectedRaw = null, timeoutMs = 1500) {
+  const initialRaw = await getWindowsClipboardImageRaw()
   const started = Date.now()
   while (Date.now() - started < timeoutMs) {
     const raw = await getWindowsClipboardImageRaw()
-    if (raw) return raw
+    if (!raw) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      continue
+    }
+    if (expectedRaw) {
+      if (buffersEqual(raw, expectedRaw)) {
+        if (!initialRaw || !buffersEqual(initialRaw, expectedRaw) || Date.now() - started > 200) {
+          return raw
+        }
+      }
+    } else if (!initialRaw || !buffersEqual(raw, initialRaw)) {
+      return raw
+    }
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
   return null
 }
 
-async function waitForClipboardImageSize(timeoutMs = 1500) {
+async function waitForClipboardImageSize(expectedSize = null, timeoutMs = 1500) {
+  const initialSize = getWindowsClipboardImageSize()
   const started = Date.now()
   while (Date.now() - started < timeoutMs) {
     const size = getWindowsClipboardImageSize()
-    if (size) return size
+    if (!size) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      continue
+    }
+    if (expectedSize) {
+      if (size.width === expectedSize.width && size.height === expectedSize.height) {
+        if (!initialSize || !sizesEqual(initialSize, expectedSize) || Date.now() - started > 200) {
+          return size
+        }
+      }
+    } else if (!initialSize || !sizesEqual(size, initialSize)) {
+      return size
+    }
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
   return null
@@ -61,10 +100,10 @@ describe.skipIf(process.platform !== 'win32')('Windows clipboard integration', (
 
     await setWindowsClipboardImageRaw(width, height, rgba)
 
-    const size = await waitForClipboardImageSize()
+    const size = await waitForClipboardImageSize({ width, height })
     expect(size).toEqual({ width, height })
 
-    const raw = await waitForClipboardRawImage()
+    const raw = await waitForClipboardRawImage(rgba)
     expect(raw).not.toBeNull()
     expect(raw.equals(rgba)).toBe(true)
   })
@@ -79,6 +118,8 @@ describe.skipIf(process.platform !== 'win32')('Windows clipboard integration', (
     ])
 
     await setWindowsClipboardImageRaw(width, height, rgba)
+    await waitForClipboardImageSize({ width, height })
+    await waitForClipboardRawImage(rgba)
 
     const png = await getWindowsClipboardImagePng()
     expect(png).not.toBeNull()
@@ -94,6 +135,8 @@ describe.skipIf(process.platform !== 'win32')('Windows clipboard integration', (
     const height = 1
     const rgba = Buffer.from([12, 34, 56, 255])
     await setWindowsClipboardImageRaw(width, height, rgba)
+    await waitForClipboardImageSize({ width, height })
+    await waitForClipboardRawImage(rgba)
 
     const image = await getImageFromClipboard()
     expect(image).not.toBeNull()
