@@ -1576,26 +1576,25 @@ function UserContentRenderer({ param, message, messages, tools, verbose, addMarg
         )
       }
 
-      // Fallback: plain text rendering (original behavior)
+      // Fallback: plain text rendering
       const content = typeof param.content === 'string'
         ? param.content
         : JSON.stringify(param.content)
 
-      const isExpanded = expandedToolResults.has(param.tool_use_id)
+      const isCollapsed = expandedToolResults.has(param.tool_use_id)
       const lines = content.split('\n')
-      const PREVIEW_LINES = 3
+      const PREVIEW_LINES = 5
       const hasMore = lines.length > PREVIEW_LINES
-      const previewContent = isExpanded
-        ? content
-        : lines.slice(0, PREVIEW_LINES).join('\n')
+      const displayContent = isCollapsed
+        ? lines.slice(0, PREVIEW_LINES).join('\n')
+        : content
       const hiddenCount = lines.length - PREVIEW_LINES
 
       return React.createElement(Box, {
         flexDirection: 'column',
         marginLeft: 4
       },
-        // Content lines (preview or full)
-        previewContent.split('\n').map((line, i) =>
+        displayContent.split('\n').map((line, i) =>
           React.createElement(Text, {
             key: i,
             color: isError ? THEME.error : THEME.secondaryText
@@ -1604,8 +1603,7 @@ function UserContentRenderer({ param, message, messages, tools, verbose, addMarg
             line
           )
         ),
-        // Collapsed hint
-        hasMore && !isExpanded && React.createElement(Text, {
+        hasMore && isCollapsed && React.createElement(Text, {
           key: 'more',
           dimColor: true
         }, `  … (+${hiddenCount} lines · ctrl+o to expand)`)
