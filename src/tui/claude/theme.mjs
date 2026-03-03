@@ -5,8 +5,7 @@
  */
 
 /**
- * Dario Code color palette
- * Theme color palette
+ * Light theme color palette
  */
 export const CLAUDE_COLORS = {
   // Brand colors
@@ -57,15 +56,72 @@ export const CLAUDE_COLORS = {
 }
 
 /**
+ * Dark theme color palette (terminal-appropriate)
+ */
+export const DARK_COLORS = {
+  // Brand colors (same across themes)
+  claude: '#CC9B7A',
+  claudeLight: '#E5C4A8',
+  claudeDark: '#A67C5D',
+
+  // Semantic colors (same across themes)
+  success: '#10B981',
+  error: '#EF4444',
+  warning: '#F59E0B',
+  info: '#3B82F6',
+
+  // Text colors (light on dark)
+  text: '#E5E7EB',
+  textSecondary: '#9CA3AF',
+  textTertiary: '#6B7280',
+
+  // Background colors (dark)
+  background: '#1F2937',
+  backgroundSecondary: '#111827',
+  border: '#374151',
+
+  // Tool use colors
+  toolBorder: '#CC9B7A',
+  toolBackground: '#292524',
+
+  // Thinking block colors
+  thinkingBorder: '#6B7280',
+  thinkingBackground: '#1F2937',
+  thinkingCollapsed: '#4B5563',
+
+  // Status line
+  statusBackground: '#111827',
+  statusText: '#F9FAFB',
+  statusAccent: '#CC9B7A',
+
+  // Syntax highlighting (adjusted for dark backgrounds)
+  syntax: {
+    keyword: '#F97583',
+    string: '#9ECBFF',
+    function: '#B392F0',
+    comment: '#6A737D',
+    number: '#79B8FF',
+    operator: '#F97583',
+    variable: '#FFAB70'
+  }
+}
+
+/**
  * Get theme colors based on user's theme setting
  *
  * @param {string} theme - Theme name (dark, light, dark-daltonized, light-daltonized)
  * @returns {Object} Color palette
  */
 export function getThemeColors(theme = 'dark') {
-  // For now, return the standard palette
-  // TODO: Implement theme variations
-  return CLAUDE_COLORS
+  switch (theme) {
+    case 'light':
+    case 'light-daltonized':
+      return CLAUDE_COLORS
+    case 'dark':
+    case 'dark-daltonized':
+    default:
+      return DARK_COLORS
+  }
 }
 
 /**
@@ -147,6 +203,7 @@ export const SYMBOLS = {
 
 export default {
   CLAUDE_COLORS,
+  DARK_COLORS,
   ANSI,
   BOX_CHARS,
   SYMBOLS,

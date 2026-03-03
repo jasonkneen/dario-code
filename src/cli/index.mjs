@@ -35,9 +35,6 @@ export {
 // Argument parsing
 export { parseArgs, printHelp } from './parse-args.mjs'
 
-// App initialization
-export { initialize } from './app.mjs'
-
 // Default export with all functionality
 export default {
   // Commands
@@ -70,8 +67,5 @@ export default {
 
   // Argument parsing
   parseArgs: (await import('./parse-args.mjs')).parseArgs,
-  printHelp: (await import('./parse-args.mjs')).printHelp,
-
-  // App initialization
-  initialize: (await import('./app.mjs')).initialize
+  printHelp: (await import('./parse-args.mjs')).printHelp
 }
