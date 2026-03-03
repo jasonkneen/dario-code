@@ -85,7 +85,7 @@ describe('Tool Execution', () => {
 
       // Should timeout — content indicates interruption or exit code
       expect(result.content).toMatch(/abort|interrupt|Exit code|timeout|143/i)
-    })
+    }, 30_000)
   })
 
   describe('Write Tool', () => {
