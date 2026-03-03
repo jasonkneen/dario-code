@@ -275,13 +275,8 @@ export function renderToken(token, depth = 0, orderedIndex = null, parentToken =
       if (hljs && token.lang && hljs.supportsLanguage(token.lang)) {
         return hljs.highlight(token.text, { language: token.lang }) + EOL
       } else {
-        // Log warning for unsupported language and fallback to markdown
-        // Original: X0(`Language not supported...`)
-        if (token.lang) {
-          console.warn(
-            `Language not supported while highlighting code, falling back to markdown: ${token.lang}`
-          )
-        }
+        // Unsupported language — silently fall back to markdown highlighting
+        // (Original used an internal trace logger, not console output)
         if (hljs) {
           return hljs.highlight(token.text, { language: 'markdown' }) + EOL
         }

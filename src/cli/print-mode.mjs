@@ -81,8 +81,13 @@ export async function runPrintMode(prompt, options = {}) {
     const fs = await import('fs')
     const os = await import('os')
 
+    // Create LSP client for code intelligence
+    const { createLspClient } = await import('../lsp/client.mjs')
+    const lspClient = createLspClient({ rootUri: `file://${process.cwd()}` })
+
     const toolObjects = createAllTools({
       fs, path, os,
+      lspClient,
       executeCommand,
       getCurrentDir: utils.getCurrentDir,
       getOriginalDir: utils.getOriginalDir,

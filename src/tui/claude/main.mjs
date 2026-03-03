@@ -4011,10 +4011,15 @@ async function main() {
   const fs = await import('fs')
   const os = await import('os')
 
+  // Create LSP client for code intelligence
+  const { createLspClient } = await import('../../lsp/client.mjs')
+  const lspClient = createLspClient({ rootUri: `file://${process.cwd()}` })
+
   const toolObjects = createAllTools({
     fs,
     path,
     os,
+    lspClient,
     executeCommand: executeCommand,
     getCurrentDir: utils.getCurrentDir,
     getOriginalDir: utils.getOriginalDir,
@@ -4168,7 +4173,7 @@ async function main() {
 
   // Handle graceful exit
   const handleExit = () => {
-    // Clear screen and exit cleanly
+    lspClient.shutdown().catch(() => {})
     process.stdout.write('\x1b[?25h') // Show cursor
     process.exit(0)
   }
