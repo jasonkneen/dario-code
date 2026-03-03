@@ -504,6 +504,40 @@ const MAX_SUGGESTIONS = 20
 const VISIBLE_SUGGESTIONS = 10 // Show 10 at a time, scroll the rest
 const TRANSCRIPT_WINDOW_SIZE = 160
 const TRANSCRIPT_SCROLL_STEP = 40
+const IS_WINDOWS_HOST = process.platform === 'win32'
+const IS_POWERSHELL_HOST = (() => {
+  if (!IS_WINDOWS_HOST) return false
+  if (process.env.DARIO_FORCE_POWERSHELL_MODE === '1') return true
+  if (process.env.DARIO_FORCE_POWERSHELL_MODE === '0') return false
+  return Boolean(
+    process.env.PSModulePath ||
+    process.env.PSExecutionPolicyPreference ||
+    process.env.PSModuleAnalysisCachePath ||
+    process.env.PSCompatibleVersions ||
+    process.env.PWSH_DISTRIBUTION_CHANNEL
+  )
+})()
+const SHOULD_ANIMATE_LOADING_SPINNER = (() => {
+  if (process.env.DARIO_FORCE_SPINNER_ANIMATION === '1') return true
+  if (process.env.DARIO_DISABLE_SPINNER_ANIMATION === '1') return false
+  // PowerShell terminals can flicker badly when Ink redraws rapidly.
+  return !IS_POWERSHELL_HOST
+})()
+const LOADING_SPINNER_FRAMES = SHOULD_ANIMATE_LOADING_SPINNER
+  ? ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+  : ['·']
+const USE_COARSE_POWERSHELL_STREAMING = (() => {
+  if (!IS_POWERSHELL_HOST) return false
+  // Set to 0 to restore per-chunk streaming in PowerShell.
+  return process.env.DARIO_POWERSHELL_COARSE_STREAMING !== '0'
+})()
+const STREAM_RENDER_THROTTLE_MS = (() => {
+  if (process.env.DARIO_DISABLE_STREAM_THROTTLE === '1') return 0
+  const configured = Number.parseInt(process.env.DARIO_STREAM_RENDER_THROTTLE_MS || '', 10)
+  if (Number.isFinite(configured) && configured >= 0) return configured
+  // Keep throttling targeted to PowerShell to avoid unnecessary noise elsewhere.
+  return IS_POWERSHELL_HOST ? 220 : 0
+})()
 
 // Standard slash commands — TUI-only commands that need direct access to TUI context.
 // Commands that exist in localCommands (from commands.mjs) are NOT duplicated here.
@@ -907,7 +941,16 @@ function getModeDisplay(mode) {
  */
 function getGitStats() {
   try {
-    const output = execFileSync('git', ['diff', '--shortstat'], { encoding: 'utf8', timeout: 2000 }).trim()
+    // Avoid noisy git usage output when launched outside a repository.
+    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+      stdio: 'ignore',
+      timeout: 1000
+    })
+    const output = execFileSync('git', ['diff', '--shortstat'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2000
+    }).trim()
     if (!output) return null
     const files = output.match(/(\d+) files? changed/)
     const ins = output.match(/(\d+) insertions?/)
@@ -1125,17 +1168,17 @@ function WorkspaceTips({ workspaceDir }) {
  */
 function LoadingSpinner() {
   const [frame, setFrame] = useState(0)
-  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
   useEffect(() => {
+    if (!SHOULD_ANIMATE_LOADING_SPINNER) return undefined
     const timer = setInterval(() => {
-      setFrame(f => (f + 1) % frames.length)
-    }, 80)
+      setFrame(f => (f + 1) % LOADING_SPINNER_FRAMES.length)
+    }, 90)
     return () => clearInterval(timer)
   }, [])
 
   return React.createElement(Box, { marginLeft: 3 },
-    React.createElement(Text, { color: THEME.claude }, frames[frame], ' Thinking...')
+    React.createElement(Text, { color: THEME.claude }, LOADING_SPINNER_FRAMES[frame], ' Thinking...')
   )
 }
 
@@ -3295,6 +3338,30 @@ function ConversationApp({
     setIsLoading(true)
     const controller = new AbortController()
     setAbortController(controller)
+    let pendingAssistantMessage = null
+    let pendingAssistantTimer = null
+
+    const applyAssistantMessage = (assistantMessage) => {
+      setMessages(prev => {
+        // Replace or add assistant message
+        const lastIdx = prev.findIndex(m =>
+          m.type === 'assistant' && m.uuid === assistantMessage.uuid
+        )
+        if (lastIdx >= 0) {
+          const updated = [...prev]
+          updated[lastIdx] = assistantMessage
+          return updated
+        }
+        return [...prev, assistantMessage]
+      })
+    }
+
+    const flushAssistantMessage = () => {
+      if (!pendingAssistantMessage) return
+      const messageToRender = pendingAssistantMessage
+      pendingAssistantMessage = null
+      applyAssistantMessage(messageToRender)
+    }
 
     try {
       let currentMessages = [...messages];
@@ -3388,19 +3455,31 @@ function ConversationApp({
         },
         controller
       )) {
-        setMessages(prev => {
-          // Replace or add assistant message
-          const lastIdx = prev.findIndex(m =>
-            m.type === 'assistant' && m.uuid === assistantMessage.uuid
-          )
-          if (lastIdx >= 0) {
-            const updated = [...prev]
-            updated[lastIdx] = assistantMessage
-            return updated
+        if (USE_COARSE_POWERSHELL_STREAMING) {
+          // In PowerShell hosts, rendering every chunk can cause full-screen repaint storms.
+          // Keep only the latest snapshot and render on flush points.
+          pendingAssistantMessage = assistantMessage
+          continue
+        }
+
+        if (STREAM_RENDER_THROTTLE_MS > 0) {
+          pendingAssistantMessage = assistantMessage
+          if (!pendingAssistantTimer) {
+            pendingAssistantTimer = setTimeout(() => {
+              pendingAssistantTimer = null
+              flushAssistantMessage()
+            }, STREAM_RENDER_THROTTLE_MS)
           }
-          return [...prev, assistantMessage]
-        })
+          continue
+        }
+
+        applyAssistantMessage(assistantMessage)
       }
+      if (pendingAssistantTimer) {
+        clearTimeout(pendingAssistantTimer)
+        pendingAssistantTimer = null
+      }
+      flushAssistantMessage()
     } catch (error) {
       if (error.name !== 'AbortError') {
         // Show error as assistant message with helpful context
@@ -3426,6 +3505,11 @@ function ConversationApp({
         }
       }
     } finally {
+      if (pendingAssistantTimer) {
+        clearTimeout(pendingAssistantTimer)
+        pendingAssistantTimer = null
+      }
+      flushAssistantMessage()
       setIsLoading(false)
       setAbortController(null)
       // Auto-submit queued message if one exists

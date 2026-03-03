@@ -1,5 +1,31 @@
 # Windows Notes
 
+## Recent updates (March 3, 2026)
+
+These fixes were added after initial Windows bring-up:
+
+- Reduced TUI flicker on Windows while `Thinking...` is shown:
+  - Default behavior in PowerShell hosts now uses a static indicator instead of an animated spinner.
+  - This avoids rapid full-screen redraw/flicker in terminals that repaint aggressively.
+  - Optional overrides:
+    - `DARIO_FORCE_SPINNER_ANIMATION=1` to force animation.
+    - `DARIO_DISABLE_SPINNER_ANIMATION=1` to disable animation on any platform.
+- Added startup PowerShell host detection and gated render behavior:
+  - Detection uses PowerShell environment markers (for example `PSModulePath`).
+  - This keeps special rendering logic targeted to PowerShell instead of all Windows shells.
+- Throttled assistant streaming UI updates in PowerShell:
+  - Streaming responses are batched before rendering in the TUI.
+  - This prevents per-token full-frame redraw storms in PowerShell/ConHost terminals.
+  - Optional overrides:
+    - `DARIO_STREAM_RENDER_THROTTLE_MS=<number>` to set throttle delay.
+    - `DARIO_DISABLE_STREAM_THROTTLE=1` to disable throttling.
+- Added coarse streaming mode for PowerShell:
+  - During a streaming response, the UI keeps the latest assistant snapshot and renders on flush points instead of per chunk.
+  - Set `DARIO_POWERSHELL_COARSE_STREAMING=0` if you want classic per-chunk streaming in PowerShell.
+- Prevented noisy startup output outside Git repositories:
+  - Git stats are only queried after confirming the current folder is a Git work tree.
+  - This avoids the `git diff --no-index` usage block appearing in non-repo folders.
+
 This document explains how this repository behaves on Windows, what was changed for Windows compatibility, and what still differs from Linux/macOS.
 
 ## Current status

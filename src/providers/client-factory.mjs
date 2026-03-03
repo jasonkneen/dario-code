@@ -302,7 +302,9 @@ function buildOpenAICompatClient(providerEntry) {
               let accumulatedText = ''
               // Map: openAI tool_call index → { blockIndex, id, name, argsJson }
               const toolCallMap = new Map()
-              let nextBlockIndex = 0
+              // Track last emitted content block index.
+              // Start at -1 so tool-only responses begin at index 0.
+              let nextBlockIndex = -1
 
               const textDecoder = new TextDecoder()
               reader = response.body.getReader()
