@@ -76,9 +76,10 @@ export function buildRipgrepArgs(pattern, options = {}) {
     args.push('--glob', options.glob)
   }
 
-  // File type
+  // File type - use --type-add to define it first, so unknown
+  // extensions (e.g. "mjs") don't fail with "unrecognized file type"
   if (options.type) {
-    args.push('--type', options.type)
+    args.push('--type-add', `${options.type}:*.${options.type}`, '--type', options.type)
   }
 
   // Multiline mode

@@ -942,36 +942,117 @@ function useDoublePress(onDouble, timeout = 2000) {
 }
 
 /**
+ * Get short model display name
+ */
+function getModelShortName(model) {
+  const shortNames = {
+    'claude-sonnet-4-6': 'Sonnet 4.6',
+    'claude-opus-4-6': 'Opus 4.6',
+    'claude-opus-4-5-20251101': 'Opus 4.5',
+    'claude-opus-4-1-20250805': 'Opus 4.1',
+    'claude-haiku-4-5-20251001': 'Haiku 4.5',
+    'claude-sonnet-4-20250514': 'Sonnet 4',
+    'claude-3-5-haiku-20241022': 'Haiku 3.5',
+    'claude-3-5-sonnet-20241022': 'Sonnet 3.5',
+    'claude-3-7-sonnet-20250219': 'Sonnet 3.7',
+    'claude-3-opus-20240229': 'Opus 3',
+  }
+  return shortNames[model] || model
+}
+
+/**
+ * Shorten path by replacing home directory with ~
+ */
+function shortenPath(fullPath) {
+  const home = homedir()
+  if (fullPath.startsWith(home)) {
+    return '~' + fullPath.slice(home.length)
+  }
+  return fullPath
+}
+
+const FEATURE_TIPS = [
+  { label: '/context manage', desc: 'toggle skills, memory & tools on/off to save tokens' },
+  { label: '/context add <file|url>', desc: 'inject docs, files or search results into context' },
+  { label: '/tools', desc: 'set per-tool modes: always / ask / auto / off' },
+  { label: 'hold Space', desc: 'speak your prompt using voice input (STT)' },
+  { label: '/skills', desc: 'browse and invoke slash command skill packs' },
+  { label: '/compact', desc: 'summarise conversation history to free context space' },
+  { label: '/approved-tools', desc: 'manage which tools run without confirmation' },
+  { label: '/sessions', desc: 'resume any previous conversation by session ID' },
+  { label: '/mcp', desc: 'add Model Context Protocol servers for extra tools' },
+  { label: 'plan mode', desc: 'Claude enters a planning phase before writing code' },
+]
+
+/**
  * Welcome Banner
  */
-function WelcomeBanner({ mcpClients = [], isDefaultModel = true }) {
+function WelcomeBanner({ mcpClients = [], isDefaultModel = true, model = '' }) {
   const termWidth = process.stdout.columns || 80
-  const width = Math.min(termWidth, Math.max(46, process.cwd().length + 12))
+  const shortPath = shortenPath(process.cwd())
+  const width = Math.min(termWidth, Math.max(46, shortPath.length + 20))
+
+  // Logo block art (3 lines)
+  const logoLines = [
+    ' \u2590\u259B\u2588\u2588\u2588\u259C\u258C ',
+    '\u259D\u259C\u259B\u259C\u2588\u259B\u259C\u259B\u2598',
+    '  \u2598\u2598 \u259D\u259D  ',
+  ]
+
+  // Info lines next to logo
+  const modelName = getModelShortName(model)
+
+  // Pick a tip that rotates each startup
+  const numStartups = loadConfig().numStartups ?? 0
+  const tip = FEATURE_TIPS[numStartups % FEATURE_TIPS.length]
 
   return React.createElement(Box, { flexDirection: 'column' },
     React.createElement(Box, {
       borderColor: THEME.claude,
       borderStyle: 'round',
       flexDirection: 'column',
-      gap: 1,
       paddingLeft: 1,
+      paddingRight: 1,
       width: width
     },
-      React.createElement(Text, { key: 'title' },
-        React.createElement(Text, { color: THEME.claude }, '✻'),
-        ' Welcome to ',
-        React.createElement(Text, { bold: true }, 'Dario'),
-        React.createElement(Text, null, '!')
+      // Logo + info row
+      React.createElement(Box, { key: 'logo-row', flexDirection: 'row' },
+        // Logo column
+        React.createElement(Box, { flexDirection: 'column', marginRight: 1 },
+          ...logoLines.map((line, i) =>
+            React.createElement(Text, { key: `logo-${i}`, color: THEME.claude }, line)
+          )
+        ),
+        // Info column
+        React.createElement(Box, { flexDirection: 'column', justifyContent: 'center' },
+          React.createElement(Text, { key: 'version' },
+            React.createElement(Text, { bold: true }, 'Dario Code'),
+            React.createElement(Text, { color: THEME.secondaryText }, ` v${VERSION}`)
+          ),
+          React.createElement(Text, { key: 'model' },
+            React.createElement(Text, null, modelName)
+          ),
+          React.createElement(Text, { key: 'cwd', color: THEME.secondaryText, wrap: 'truncate' }, shortPath)
+        )
       ),
+      // Feature tip row
       React.createElement(Box, {
-        key: 'info',
-        paddingLeft: 2,
-        flexDirection: 'column',
-        gap: 1
+        key: 'tip',
+        borderColor: THEME.secondaryBorder,
+        borderStyle: 'single',
+        borderBottom: false,
+        borderLeft: false,
+        borderRight: false,
+        borderTop: true,
+        marginLeft: 2,
+        marginRight: 1,
+        paddingTop: 1,
       },
-        React.createElement(Text, { key: 'help', color: THEME.secondaryText, italic: true }, '/help for help'),
-        React.createElement(Text, { key: 'cwd', color: THEME.secondaryText, wrap: 'truncate' }, 'cwd: ', process.cwd())
+        React.createElement(Text, { color: THEME.secondaryText }, '💡 '),
+        React.createElement(Text, { color: THEME.text, bold: true }, tip.label),
+        React.createElement(Text, { color: THEME.secondaryText }, ' — ' + tip.desc)
       ),
+      // MCP Servers section
       mcpClients.length > 0 && React.createElement(Box, {
         key: 'mcp',
         borderColor: THEME.secondaryBorder,
@@ -990,7 +1071,7 @@ function WelcomeBanner({ mcpClients = [], isDefaultModel = true }) {
         ),
         mcpClients.map((client, idx) =>
           React.createElement(Box, { key: idx, width: width - 6 },
-            React.createElement(Text, { color: THEME.secondaryText }, '• ', client.name),
+            React.createElement(Text, { color: THEME.secondaryText }, '\u2022 ', client.name),
             React.createElement(Box, { flexGrow: 1 }),
             React.createElement(Text, {
               bold: true,
@@ -1324,7 +1405,7 @@ function UserContentRenderer({ param, message, messages, tools, verbose, addMarg
         width: '100%',
       },
         React.createElement(Text, null,
-          React.createElement(Text, { color: THEME.success, bold: true }, '> '),
+          React.createElement(Text, { color: THEME.success, bold: true }, '❯ '),
           param.text
         )
       )
@@ -2076,7 +2157,7 @@ function PromptInput({
       },
         mode === 'bash'
           ? React.createElement(Text, { key: 'bash', color: THEME.bashBorder }, ' ! ')
-          : React.createElement(Text, { key: 'normal', color: isLoading ? THEME.secondaryText : undefined }, ' > ')
+          : React.createElement(Text, { key: 'normal', color: isLoading ? THEME.secondaryText : undefined }, ' ❯ ')
       ),
       // Text input display (voice status shown as placeholder to avoid layout shift)
       React.createElement(Box, { key: 'input', paddingRight: 1, flexGrow: 1 },
@@ -3073,7 +3154,8 @@ function ConversationApp({
         },
           React.createElement(WelcomeBanner, {
             mcpClients,
-            isDefaultModel
+            isDefaultModel,
+            model: currentModel
           }),
           React.createElement(WorkspaceTips, {
             workspaceDir: process.cwd()
@@ -3099,7 +3181,7 @@ function ConversationApp({
       }))
     ]
     return items
-  }, [forkNumber, staticMessages, effectiveVerbose, debug, mcpClients, isDefaultModel])
+  }, [forkNumber, staticMessages, effectiveVerbose, debug, mcpClients, isDefaultModel, currentModel])
 
   return React.createElement(Box, { flexDirection: 'column' },
     // Static messages — rendered once, never re-rendered (prevents flash)

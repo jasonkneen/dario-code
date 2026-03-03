@@ -362,9 +362,21 @@ export async function runRipgrep(args, targetDir, signal) {
   const { spawn } = await import('child_process')
 
   return new Promise((resolve, reject) => {
-    const cwd = targetDir || currentWorkingDir
-    const child = spawn('rg', ['--color=never', ...args, cwd], {
-      cwd,
+    let searchPath = targetDir || currentWorkingDir
+    let spawnCwd = searchPath
+
+    // If the path is a file (not a directory), use its parent as cwd
+    // to avoid ENOTDIR when spawn tries to set the working directory
+    try {
+      if (fs.statSync(searchPath).isFile()) {
+        spawnCwd = path.dirname(searchPath)
+      }
+    } catch {
+      // Path doesn't exist — let rg report the error
+    }
+
+    const child = spawn('rg', ['--color=never', ...args, searchPath], {
+      cwd: spawnCwd,
       stdio: ['pipe', 'pipe', 'pipe']
     })
 

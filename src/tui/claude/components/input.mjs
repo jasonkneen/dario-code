@@ -146,7 +146,7 @@ export function MultiLineInput({ onSubmit, onCancel, initialValue = '' }) {
       )
     ),
     React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { color: CLAUDE_COLORS.claude }, '> '),
+      React.createElement(Text, { color: CLAUDE_COLORS.claude }, '❯ '),
       React.createElement(TextInput, {
         value: lines[currentLine],
         onChange: (value) => {
