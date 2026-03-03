@@ -1577,9 +1577,16 @@ function UserContentRenderer({ param, message, messages, tools, verbose, addMarg
       }
 
       // Fallback: plain text rendering
+      // Filter out base64 image data to avoid dumping huge strings
       const content = typeof param.content === 'string'
         ? param.content
-        : JSON.stringify(param.content)
+        : Array.isArray(param.content)
+          ? param.content.map(block =>
+              block.type === 'image'
+                ? `[image: ${block.source?.media_type || 'image'}]`
+                : block.text || JSON.stringify(block)
+            ).join('\n')
+          : JSON.stringify(param.content)
 
       const isCollapsed = expandedToolResults.has(param.tool_use_id)
       const lines = content.split('\n')
