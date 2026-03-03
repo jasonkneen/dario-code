@@ -79,6 +79,7 @@ program
     if (options.tools) process.env.DARIO_TOOLS = options.tools;
     if (options.fromPr) process.env.DARIO_FROM_PR = options.fromPr;
     if (options.maxTurns !== undefined) process.env.DARIO_MAX_TURNS = String(options.maxTurns);
+    if (options.dangerouslySkipPermissions) process.env.DARIO_DANGEROUSLY_SKIP_PERMISSIONS = '1';
     if (options.inputFormat) process.env.DARIO_INPUT_FORMAT = options.inputFormat;
     if (options.addDir) {
       for (const dir of options.addDir) {

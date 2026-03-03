@@ -3640,8 +3640,9 @@ async function main() {
       React.createElement(ErrorBoundary, null,
         React.createElement(ConversationApp, {
           commands,
+          dangerouslySkipPermissions: process.env.DARIO_DANGEROUSLY_SKIP_PERMISSIONS === '1',
           debug: process.argv.includes('--debug'),
-          initialPrompt: process.env.INITIAL_PROMPT || process.argv[2],
+          initialPrompt: process.env.INITIAL_PROMPT || undefined,
           initialPrNumber: config.prNumber,
           currentSession: config.currentSession,
           messageLogName: new Date().toISOString(),
