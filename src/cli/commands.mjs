@@ -2226,13 +2226,16 @@ export const voiceCommand = {
 
   async call(closeOverlay, context) {
     const arg = context?.args?.[0]?.toLowerCase()
+    const soxInstallHint = process.platform === 'win32'
+      ? 'winget install --id sox_ng.sox_ng --exact (recommended) or choco install sox'
+      : 'brew install sox (macOS) or apt install sox (Linux)'
 
     // Status check helpers
     const soxOk = isSoxAvailable()
     const provider = await resolveProviderAsync()
 
     if (arg === 'on') {
-      if (!soxOk) return '✗ sox not found. Install it: brew install sox (macOS) or apt install sox (Linux)'
+      if (!soxOk) return `✗ No recorder binary found (sox_ng, sox, or rec). Install it: ${soxInstallHint}`
       if (!provider) return '✗ No STT API key. Set GROQ_API_KEY (recommended) or OPENAI_API_KEY.'
       keyboardManager.enableVoiceMode()
       return `✓ Voice mode ON · STT: ${provider.name} · Hold Space to speak (when prompt is empty)`
@@ -2250,7 +2253,7 @@ export const voiceCommand = {
     }
 
     // Trying to enable — validate deps
-    if (!soxOk) return '✗ sox not found. Install it: brew install sox (macOS) or apt install sox (Linux)'
+    if (!soxOk) return `✗ No recorder binary found (sox_ng, sox, or rec). Install it: ${soxInstallHint}`
     if (!provider) return '✗ No STT API key. Set GROQ_API_KEY (recommended) or OPENAI_API_KEY.'
 
     keyboardManager.enableVoiceMode()
@@ -2274,42 +2277,75 @@ export const terminalSetupCommand = {
     const { join } = await import('path')
     const { execFileSync } = await import('child_process')
     const home = (await import('os')).homedir()
-    const shell = process.env.SHELL || '/bin/bash'
+    const isWindows = process.platform === 'win32'
+    const shell = isWindows ? 'powershell' : (process.env.SHELL || '/bin/bash')
     const shellName = shell.split('/').pop()
 
     let output = `\n  Terminal Setup\n  ${'─'.repeat(44)}\n`
     output += `  Detected shell: ${shellName} (${shell})\n\n`
 
-    const rcFiles = { bash: '.bashrc', zsh: '.zshrc', fish: '.config/fish/config.fish' }
-    const rcFile = rcFiles[shellName] || '.bashrc'
-    const rcPath = join(home, rcFile)
-
-    let alreadySetup = false
-    if (existsSync(rcPath)) {
-      const content = readFileSync(rcPath, 'utf8')
-      alreadySetup = content.includes('dario') || content.includes('claude=')
-    }
-
-    if (alreadySetup) {
-      output += `  ✓ Shell integration already configured in ~/${rcFile}\n`
-    } else {
-      output += `  To set up shell integration, add to ~/${rcFile}:\n\n`
-      output += `    # Dario CLI\n`
-      output += `    alias claude='dario'\n`
-      if (shellName === 'fish') {
-        output += `    # For fish shell:\n`
-        output += `    alias claude 'dario'\n`
+    if (isWindows) {
+      let profilePath = '$PROFILE.CurrentUserAllHosts'
+      try {
+        profilePath = execFileSync(
+          'powershell',
+          ['-NoProfile', '-Command', '$PROFILE.CurrentUserAllHosts'],
+          { encoding: 'utf8' }
+        ).trim() || profilePath
+      } catch {
+        // Keep default profile variable reference
       }
-      output += `\n  Then restart your shell or run: source ~/${rcFile}\n`
+
+      let alreadySetup = false
+      if (existsSync(profilePath)) {
+        const content = readFileSync(profilePath, 'utf8')
+        alreadySetup = content.includes('Set-Alias claude dario') || content.includes('function claude')
+      }
+
+      if (alreadySetup) {
+        output += `  ✓ Shell integration already configured in PowerShell profile\n`
+      } else {
+        output += `  To set up shell integration, add to your PowerShell profile:\n\n`
+        output += `    # Dario CLI\n`
+        output += `    Set-Alias claude dario\n`
+        output += `\n  Profile: ${profilePath}\n`
+      }
+    } else {
+      const rcFiles = { bash: '.bashrc', zsh: '.zshrc', fish: '.config/fish/config.fish' }
+      const rcFile = rcFiles[shellName] || '.bashrc'
+      const rcPath = join(home, rcFile)
+
+      let alreadySetup = false
+      if (existsSync(rcPath)) {
+        const content = readFileSync(rcPath, 'utf8')
+        alreadySetup = content.includes('dario') || content.includes('claude=')
+      }
+
+      if (alreadySetup) {
+        output += `  ✓ Shell integration already configured in ~/${rcFile}\n`
+      } else {
+        output += `  To set up shell integration, add to ~/${rcFile}:\n\n`
+        output += `    # Dario CLI\n`
+        output += `    alias claude='dario'\n`
+        if (shellName === 'fish') {
+          output += `    # For fish shell:\n`
+          output += `    alias claude 'dario'\n`
+        }
+        output += `\n  Then restart your shell or run: source ~/${rcFile}\n`
+      }
     }
 
     try {
-      execFileSync('which', ['dario'], { stdio: 'pipe' })
-      output += `\n  ✓ dario is in PATH\n`
+      if (isWindows) {
+        execFileSync('powershell', ['-NoProfile', '-Command', 'Get-Command dario -ErrorAction Stop | Out-Null'], { stdio: 'pipe' })
+      } else {
+        execFileSync('which', ['dario'], { stdio: 'pipe' })
+      }
+      output += '\n  ✓ dario is in PATH\n'
     } catch {
-      output += `\n  ⚠  dario not found in PATH\n`
-      output += `  Install globally: npm install -g dario-code\n`
-      output += `  Or use npx: npx dario-code\n`
+      output += '\n  ⚠  dario not found in PATH\n'
+      output += '  Install globally: npm install -g dario-code\n'
+      output += '  Or use npx: npx dario-code\n'
     }
 
     return output

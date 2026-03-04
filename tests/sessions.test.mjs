@@ -319,6 +319,7 @@ test('should encode project path correctly', () => {
   expect(sessions.encodeProjectPath('/foo/bar/baz')).toBe('-foo-bar-baz')
   // Underscores also become dashes (matching real Claude Code)
   expect(sessions.encodeProjectPath('/Users/jkneen/my_project')).toBe('-Users-jkneen-my-project')
+  expect(sessions.encodeProjectPath('C:\\Users\\jkneen\\my_project')).toBe('C-Users-jkneen-my-project')
 })
 
 test('sessions are project-scoped (per CWD)', () => {

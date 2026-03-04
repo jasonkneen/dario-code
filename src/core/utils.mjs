@@ -11,6 +11,62 @@ import os from 'os'
 // Track original working directory
 let originalWorkingDir = process.cwd()
 let currentWorkingDir = process.cwd()
+const WINDOWS_GIT_BASH_PATH = /^\/([a-zA-Z])(?:\/(.*))?$/
+const WINDOWS_DRIVE_PREFIX_PATH = /^([a-zA-Z])[\\/](.*)$/
+
+/**
+ * Normalize user-provided paths across shells.
+ * On Windows, Git Bash may pass absolute paths as /c/foo/bar.
+ */
+export function normalizeUserPath(filePath) {
+  if (typeof filePath !== 'string') return filePath
+  if (process.platform !== 'win32') return filePath
+
+  const drivePathMatch = filePath.match(WINDOWS_GIT_BASH_PATH)
+  if (drivePathMatch) {
+    const drive = drivePathMatch[1].toUpperCase()
+    const rest = drivePathMatch[2] ? drivePathMatch[2].replace(/\//g, '\\') : ''
+    return rest ? `${drive}:\\${rest}` : `${drive}:\\`
+  }
+
+  // Normalize "c/foo/bar" or "c\\foo\\bar" to "C:\\foo\\bar".
+  // This appears when Git Bash style paths lose the leading slash.
+  const drivePrefixMatch = filePath.match(WINDOWS_DRIVE_PREFIX_PATH)
+  if (drivePrefixMatch) {
+    const drive = drivePrefixMatch[1].toUpperCase()
+    const driveRoot = `${drive}:\\`
+    if (fs.existsSync(driveRoot)) {
+      const rest = drivePrefixMatch[2] ? drivePrefixMatch[2].replace(/\//g, '\\') : ''
+      return rest ? `${driveRoot}${rest}` : driveRoot
+    }
+  }
+
+  // Normalize C:/foo/bar to C:\foo\bar for consistent comparisons.
+  if (/^[a-zA-Z]:\//.test(filePath)) {
+    return filePath.replace(/\//g, '\\')
+  }
+
+  return filePath
+}
+
+function normalizeForComparison(filePath, basePath = currentWorkingDir) {
+  const resolved = resolvePath(filePath, basePath)
+  const normalized = path.normalize(path.resolve(resolved))
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
+}
+
+function isPathWithinDirectory(filePath, allowedDir) {
+  const normalizedPath = normalizeForComparison(filePath)
+  const normalizedAllowed = normalizeForComparison(allowedDir)
+
+  if (normalizedPath === normalizedAllowed) return true
+
+  const allowedWithSep = normalizedAllowed.endsWith(path.sep)
+    ? normalizedAllowed
+    : `${normalizedAllowed}${path.sep}`
+
+  return normalizedPath.startsWith(allowedWithSep)
+}
 
 /**
  * Get the original working directory (set at startup)
@@ -23,7 +79,7 @@ export function getOriginalDir() {
  * Set the original working directory (call once at startup)
  */
 export function setOriginalDir(dir) {
-  originalWorkingDir = dir
+  originalWorkingDir = resolvePath(dir, process.cwd())
 }
 
 /**
@@ -37,23 +93,30 @@ export function getCurrentDir() {
  * Set the current working directory
  */
 export function setCurrentDir(dir) {
-  currentWorkingDir = dir
+  currentWorkingDir = resolvePath(dir, currentWorkingDir)
 }
 
 /**
  * Check if a path is absolute
  */
 export function isAbsolutePath(filePath) {
-  return path.isAbsolute(filePath)
+  if (!filePath) return false
+  return path.isAbsolute(normalizeUserPath(filePath))
 }
 
 /**
  * Resolve a path relative to the current working directory
  */
 export function resolvePath(filePath, basePath = currentWorkingDir) {
-  if (!filePath) return basePath
-  if (path.isAbsolute(filePath)) return filePath
-  return path.resolve(basePath, filePath)
+  const normalizedBase = normalizeUserPath(basePath)
+  if (!filePath) return path.normalize(path.resolve(normalizedBase))
+
+  const normalizedPath = normalizeUserPath(filePath)
+  if (path.isAbsolute(normalizedPath)) {
+    return path.normalize(path.resolve(normalizedPath))
+  }
+
+  return path.resolve(normalizedBase, normalizedPath)
 }
 
 /**
@@ -161,9 +224,7 @@ export function normalizeLineEndings(content) {
  * Check if a path is within the allowed directory (security)
  */
 export function isInAllowedDirectory(filePath, allowedDir = originalWorkingDir) {
-  const normalizedPath = path.normalize(path.resolve(filePath))
-  const normalizedAllowed = path.normalize(allowedDir)
-  return normalizedPath.startsWith(normalizedAllowed)
+  return isPathWithinDirectory(filePath, allowedDir)
 }
 
 /**
@@ -450,6 +511,7 @@ export default {
   getCurrentDir,
   setCurrentDir,
   isAbsolutePath,
+  normalizeUserPath,
   resolvePath,
   getRelativePath,
   fileExists,

@@ -504,6 +504,59 @@ const MAX_SUGGESTIONS = 20
 const VISIBLE_SUGGESTIONS = 10 // Show 10 at a time, scroll the rest
 const TRANSCRIPT_WINDOW_SIZE = 160
 const TRANSCRIPT_SCROLL_STEP = 40
+const IS_WINDOWS_HOST = process.platform === 'win32'
+const IS_GIT_BASH_HOST = (() => {
+  if (!IS_WINDOWS_HOST) return false
+  if (process.env.DARIO_FORCE_GIT_BASH_MODE === '1') return true
+  if (process.env.DARIO_FORCE_GIT_BASH_MODE === '0') return false
+  const shell = (process.env.SHELL || '').toLowerCase()
+  const msystem = (process.env.MSYSTEM || '').toLowerCase()
+  return shell.includes('bash') || shell.includes('/bin/sh') || msystem.length > 0
+})()
+const IS_POWERSHELL_HOST = (() => {
+  if (!IS_WINDOWS_HOST) return false
+  if (process.env.DARIO_FORCE_POWERSHELL_MODE === '1') return true
+  if (process.env.DARIO_FORCE_POWERSHELL_MODE === '0') return false
+  // Git Bash / MSYS2 may inherit PowerShell env vars; do not treat them as PowerShell hosts.
+  if (IS_GIT_BASH_HOST) return false
+  return Boolean(
+    process.env.PSModulePath ||
+    process.env.PSExecutionPolicyPreference ||
+    process.env.PSModuleAnalysisCachePath ||
+    process.env.PSCompatibleVersions ||
+    process.env.PWSH_DISTRIBUTION_CHANNEL
+  )
+})()
+const SHOULD_ANIMATE_LOADING_SPINNER = (() => {
+  if (process.env.DARIO_FORCE_SPINNER_ANIMATION === '1') return true
+  if (process.env.DARIO_DISABLE_SPINNER_ANIMATION === '1') return false
+  // PowerShell terminals can flicker badly when Ink redraws rapidly.
+  return !IS_POWERSHELL_HOST
+})()
+const LOADING_SPINNER_FRAMES = SHOULD_ANIMATE_LOADING_SPINNER
+  ? ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+  : ['·']
+const USE_COARSE_POWERSHELL_STREAMING = (() => {
+  if (!IS_POWERSHELL_HOST) return false
+  // Set to 0 to restore per-chunk streaming in PowerShell.
+  return process.env.DARIO_POWERSHELL_COARSE_STREAMING !== '0'
+})()
+const COARSE_STREAM_FLUSH_MS = (() => {
+  const configured = Number.parseInt(process.env.DARIO_COARSE_STREAM_FLUSH_MS || '', 10)
+  if (Number.isFinite(configured) && configured >= 0) return configured
+  // Coarse enough to reduce repaint storms, frequent enough to show progress.
+  return 400
+})()
+const STREAM_RENDER_THROTTLE_MS = (() => {
+  if (process.env.DARIO_DISABLE_STREAM_THROTTLE === '1') return 0
+  const configured = Number.parseInt(process.env.DARIO_STREAM_RENDER_THROTTLE_MS || '', 10)
+  if (Number.isFinite(configured) && configured >= 0) return configured
+  // Windows terminals can repaint full frames on rapid Ink updates.
+  // Git Bash gets a lighter throttle than PowerShell to keep responsiveness.
+  if (IS_POWERSHELL_HOST) return 220
+  if (IS_GIT_BASH_HOST) return 120
+  return 0
+})()
 
 // Standard slash commands — TUI-only commands that need direct access to TUI context.
 // Commands that exist in localCommands (from commands.mjs) are NOT duplicated here.
@@ -907,7 +960,16 @@ function getModeDisplay(mode) {
  */
 function getGitStats() {
   try {
-    const output = execFileSync('git', ['diff', '--shortstat'], { encoding: 'utf8', timeout: 2000 }).trim()
+    // Avoid noisy git usage output when launched outside a repository.
+    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+      stdio: 'ignore',
+      timeout: 1000
+    })
+    const output = execFileSync('git', ['diff', '--shortstat'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2000
+    }).trim()
     if (!output) return null
     const files = output.match(/(\d+) files? changed/)
     const ins = output.match(/(\d+) insertions?/)
@@ -995,7 +1057,7 @@ const FEATURE_TIPS = [
 function WelcomeBanner({ mcpClients = [], isDefaultModel = true, model = '' }) {
   const termWidth = process.stdout.columns || 80
   const shortPath = shortenPath(process.cwd())
-  const width = Math.min(termWidth, Math.max(46, shortPath.length + 20))
+  const modelName = getModelShortName(model)
 
   // Logo block art (3 lines)
   const logoLines = [
@@ -1004,8 +1066,16 @@ function WelcomeBanner({ mcpClients = [], isDefaultModel = true, model = '' }) {
     '  \u2598\u2598 \u259D\u259D  ',
   ]
 
-  // Info lines next to logo
-  const modelName = getModelShortName(model)
+  const textWidth = (value) => Array.from(value || '').length
+  const logoWidth = Math.max(...logoLines.map(textWidth))
+  const infoWidth = Math.max(
+    textWidth(`Dario Code v${VERSION}`),
+    textWidth(modelName),
+    textWidth(shortPath)
+  )
+
+  // border(2) + horizontal padding(2) + logo/info column gap(1)
+  const width = Math.min(termWidth, Math.max(46, logoWidth + infoWidth + 5))
 
   // Pick a tip that rotates each startup
   const numStartups = loadConfig().numStartups ?? 0
@@ -1034,7 +1104,7 @@ function WelcomeBanner({ mcpClients = [], isDefaultModel = true, model = '' }) {
             React.createElement(Text, { bold: true }, 'Dario Code'),
             React.createElement(Text, { color: THEME.secondaryText }, ` v${VERSION}`)
           ),
-          React.createElement(Text, { key: 'model' },
+          React.createElement(Text, { key: 'model', wrap: 'truncate' },
             React.createElement(Text, null, modelName)
           ),
           React.createElement(Text, { key: 'cwd', color: THEME.secondaryText, wrap: 'truncate' }, shortPath)
@@ -1125,17 +1195,17 @@ function WorkspaceTips({ workspaceDir }) {
  */
 function LoadingSpinner() {
   const [frame, setFrame] = useState(0)
-  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
   useEffect(() => {
+    if (!SHOULD_ANIMATE_LOADING_SPINNER) return undefined
     const timer = setInterval(() => {
-      setFrame(f => (f + 1) % frames.length)
-    }, 80)
+      setFrame(f => (f + 1) % LOADING_SPINNER_FRAMES.length)
+    }, 90)
     return () => clearInterval(timer)
   }, [])
 
   return React.createElement(Box, { marginLeft: 3 },
-    React.createElement(Text, { color: THEME.claude }, frames[frame], ' Thinking...')
+    React.createElement(Text, { color: THEME.claude }, LOADING_SPINNER_FRAMES[frame], ' Thinking...')
   )
 }
 
@@ -1540,17 +1610,19 @@ function UserContentRenderer({ param, addMargin, expandedToolResults = new Set()
     case 'tool_result': {
       const isError = param.is_error
       const data = param.data
+      const isExpanded = expandedToolResults.has(param.tool_use_id)
       // Inline diff for Edit tool (has oldString/newString)
       if (!isError && data?.oldString !== undefined && data?.newString !== undefined && data.oldString !== data.newString) {
         const displayFile = data.filePath || 'file'
         return React.createElement(Box, { flexDirection: 'column', marginLeft: 4 },
           React.createElement(Text, { color: THEME.secondaryText }, '⎿ ', `Updated ${displayFile}`),
-          React.createElement(DiffBlock, {
-            oldText: data.oldString,
-            newText: data.newString,
-            filename: displayFile,
-
-          })
+          isExpanded
+            ? React.createElement(DiffBlock, {
+                oldText: data.oldString,
+                newText: data.newString,
+                filename: displayFile,
+              })
+            : React.createElement(Text, { dimColor: true }, '  … (ctrl+o to expand diff)')
         )
       }
 
@@ -1559,12 +1631,13 @@ function UserContentRenderer({ param, addMargin, expandedToolResults = new Set()
         const displayFile = data.filePath || 'file'
         return React.createElement(Box, { flexDirection: 'column', marginLeft: 4 },
           React.createElement(Text, { color: THEME.secondaryText }, '⎿ ', `Updated ${displayFile}`),
-          React.createElement(DiffBlock, {
-            oldText: data.oldContent,
-            newText: data.content,
-            filename: displayFile,
-
-          })
+          isExpanded
+            ? React.createElement(DiffBlock, {
+                oldText: data.oldContent,
+                newText: data.content,
+                filename: displayFile,
+              })
+            : React.createElement(Text, { dimColor: true }, '  … (ctrl+o to expand diff)')
         )
       }
 
@@ -1588,7 +1661,7 @@ function UserContentRenderer({ param, addMargin, expandedToolResults = new Set()
             ).join('\n')
           : JSON.stringify(param.content)
 
-      const isCollapsed = expandedToolResults.has(param.tool_use_id)
+      const isCollapsed = !isExpanded
       const lines = content.split('\n')
       const PREVIEW_LINES = 5
       const hasMore = lines.length > PREVIEW_LINES
@@ -2643,6 +2716,23 @@ function ConversationApp({
     loadConfig().model || 'claude-sonnet-4-6'
   )
   const [contextPercent, setContextPercent] = useState(0)
+  const hasBlockingOverlay = Boolean(
+    pendingPlan ||
+    showMessageSelector ||
+    showModelSelector ||
+    showAuthSelector ||
+    showFastModeToggle ||
+    showMcpManager ||
+    showConfigManager ||
+    showApprovedToolsManager ||
+    showSessionPicker ||
+    showPluginManager ||
+    showProviderManager ||
+    showAgentManager ||
+    showToolsManager ||
+    showContextManager ||
+    showSteeringQuestions
+  )
 
   // MCP status object for footer — { text, connected, total, hasLazy }
   const mcpStatus = useMemo(() => {
@@ -3172,6 +3262,19 @@ function ConversationApp({
     setMessages(prev => [...prev, msg])
   }, [pendingPlan])
 
+  // Global Ctrl+C fallback when an overlay is active.
+  // In raw mode, SIGINT may not be delivered consistently across terminals.
+  useInput((char, key) => {
+    if (char === '\x03' || (key?.ctrl && (char === 'c' || char === 'C'))) {
+      process.stdout.write('\x1b[?25h') // Show cursor
+      try {
+        process.kill(process.pid, 'SIGINT')
+      } catch {
+        process.exit(0)
+      }
+    }
+  }, { isActive: hasBlockingOverlay })
+
   useInput((char, key) => {
     if (!pendingPlan) return
     if (char === 'y' || char === 'Y') {
@@ -3295,6 +3398,43 @@ function ConversationApp({
     setIsLoading(true)
     const controller = new AbortController()
     setAbortController(controller)
+    let pendingAssistantMessage = null
+    let pendingAssistantTimer = null
+    let shouldFlushPendingAssistant = true
+
+    const applyAssistantMessage = (assistantMessage) => {
+      setMessages(prev => {
+        // Replace or add assistant message
+        const lastIdx = prev.findIndex(m =>
+          m.type === 'assistant' && m.uuid === assistantMessage.uuid
+        )
+        if (lastIdx >= 0) {
+          const updated = [...prev]
+          updated[lastIdx] = assistantMessage
+          return updated
+        }
+        return [...prev, assistantMessage]
+      })
+    }
+
+    const flushAssistantMessage = () => {
+      if (!pendingAssistantMessage) return
+      const messageToRender = pendingAssistantMessage
+      pendingAssistantMessage = null
+      applyAssistantMessage(messageToRender)
+    }
+
+    const scheduleAssistantFlush = (delayMs, reset = false) => {
+      if (reset && pendingAssistantTimer) {
+        clearTimeout(pendingAssistantTimer)
+        pendingAssistantTimer = null
+      }
+      if (pendingAssistantTimer) return
+      pendingAssistantTimer = setTimeout(() => {
+        pendingAssistantTimer = null
+        flushAssistantMessage()
+      }, delayMs)
+    }
 
     try {
       let currentMessages = [...messages];
@@ -3388,21 +3528,36 @@ function ConversationApp({
         },
         controller
       )) {
-        setMessages(prev => {
-          // Replace or add assistant message
-          const lastIdx = prev.findIndex(m =>
-            m.type === 'assistant' && m.uuid === assistantMessage.uuid
-          )
-          if (lastIdx >= 0) {
-            const updated = [...prev]
-            updated[lastIdx] = assistantMessage
-            return updated
-          }
-          return [...prev, assistantMessage]
-        })
+        if (USE_COARSE_POWERSHELL_STREAMING) {
+          // In PowerShell hosts, rendering every chunk can cause full-screen repaint storms.
+          // Keep only the latest snapshot and periodically flush it.
+          pendingAssistantMessage = assistantMessage
+          scheduleAssistantFlush(COARSE_STREAM_FLUSH_MS)
+          continue
+        }
+
+        if (STREAM_RENDER_THROTTLE_MS > 0) {
+          pendingAssistantMessage = assistantMessage
+          scheduleAssistantFlush(STREAM_RENDER_THROTTLE_MS)
+          continue
+        }
+
+        applyAssistantMessage(assistantMessage)
       }
+      if (pendingAssistantTimer) {
+        clearTimeout(pendingAssistantTimer)
+        pendingAssistantTimer = null
+      }
+      flushAssistantMessage()
     } catch (error) {
       if (error.name !== 'AbortError') {
+        // Preserve latest partial assistant output before appending explicit stream error.
+        // This avoids losing long-running partial generations when the stream fails.
+        if (pendingAssistantMessage) {
+          applyAssistantMessage(pendingAssistantMessage)
+          pendingAssistantMessage = null
+        }
+        shouldFlushPendingAssistant = false
         // Show error as assistant message with helpful context
         const errorText = error.message || formatError(error) || 'Unknown error occurred'
 
@@ -3426,6 +3581,13 @@ function ConversationApp({
         }
       }
     } finally {
+      if (pendingAssistantTimer) {
+        clearTimeout(pendingAssistantTimer)
+        pendingAssistantTimer = null
+      }
+      if (shouldFlushPendingAssistant) {
+        flushAssistantMessage()
+      }
       setIsLoading(false)
       setAbortController(null)
       // Auto-submit queued message if one exists

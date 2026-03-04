@@ -22,11 +22,15 @@ const CLAUDE_PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects')     // Secondary: 
 
 /**
  * Encode a CWD path into the project folder name.
- * Replaces both / and _ with - for folder encoding.
+ * Replaces path separators and underscores with dashes for folder encoding.
+ * Also strips the Windows drive-letter colon to keep names valid.
  * /Users/jkneen/my_project → -Users-jkneen-my-project
+ * C:\Users\jkneen\my_project → C-Users-jkneen-my-project
  */
 export function encodeProjectPath(cwd) {
-  return cwd.replace(/[/_]/g, '-')
+  const normalized = String(cwd || '').replace(/\\/g, '/')
+  const withoutDriveColon = normalized.replace(/^([A-Za-z]):(?=\/|$)/, '$1')
+  return withoutDriveColon.replace(/[/_:]/g, '-')
 }
 
 /**

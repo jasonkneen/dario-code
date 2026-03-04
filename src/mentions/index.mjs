@@ -16,6 +16,7 @@ import os from 'os'
 import { execSync } from 'child_process'
 import { glob } from 'glob'
 import { fileExists, readFile, resolvePath, getCurrentDir, formatBytes, truncateContent } from '../core/utils.mjs'
+import { getWindowsClipboardImagePng } from './windows-clipboard.mjs'
 
 /**
  * @mention pattern regex
@@ -306,7 +307,7 @@ export function getTabCompletions(partial, basePath = getCurrentDir()) {
 
 /**
  * Parse image from clipboard (Node.js implementation)
- * Requires xclip on Linux, pbpaste on macOS, Get-Clipboard on Windows
+ * Requires xclip on Linux, pbpaste on macOS, and @napi-rs/clipboard on Windows
  */
 export async function getImageFromClipboard() {
 
@@ -324,8 +325,13 @@ export async function getImageFromClipboard() {
         return null // Not an image
       }
     } else if (os.platform() === 'win32') {
-      // Windows - would need a more complex implementation
-      return null
+      const winImage = await getWindowsClipboardImagePng()
+      if (!winImage) return null
+      return {
+        data: winImage.data,
+        type: winImage.type,
+        size: winImage.size
+      }
     }
 
     // Check if it looks like image data

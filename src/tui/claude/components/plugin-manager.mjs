@@ -68,6 +68,9 @@ export function PluginManager({
   // Installed plugin names set for quick lookup
   const installedNames = new Set(installedPlugins.map(p => p.name))
 
+  const isCtrlC = (char, key) =>
+    char === '\x03' || (key?.ctrl && (char === 'c' || char === 'C'))
+
   // Fetch available plugins on mount
   useEffect(() => {
     loadAvailablePlugins()
@@ -117,7 +120,16 @@ export function PluginManager({
 
   // Keyboard handling
   useInput((char, key) => {
-    if (actionInProgress) return
+    // Always allow emergency exit from raw-input overlays.
+    if (isCtrlC(char, key)) {
+      process.stdout.write('\x1b[?25h') // Show cursor
+      process.exit(0)
+    }
+
+    if (actionInProgress) {
+      if (key.escape) onCancel?.()
+      return
+    }
 
     // Escape - back navigation
     if (key.escape) {
@@ -261,8 +273,24 @@ export function PluginManager({
     }
   }, { isActive: !searchFocused && marketView !== 'add' })
 
+  // Search-focused keyboard handling:
+  // allow Esc/Ctrl+C even while TextInput has focus.
+  useInput((char, key) => {
+    if (isCtrlC(char, key)) {
+      process.stdout.write('\x1b[?25h') // Show cursor
+      process.exit(0)
+    }
+    if (key.escape) {
+      setSearchFocused(false)
+    }
+  }, { isActive: searchFocused && marketView !== 'add' })
+
   // Escape handler for marketplace add view
   useInput((char, key) => {
+    if (isCtrlC(char, key)) {
+      process.stdout.write('\x1b[?25h') // Show cursor
+      process.exit(0)
+    }
     if (key.escape) {
       setMarketView('list')
       setNewRegName('')

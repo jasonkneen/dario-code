@@ -12,6 +12,7 @@ import path from 'path'
 import os from 'os'
 import { spawn, exec } from 'child_process'
 import { glob } from 'glob'
+import { buildShellSpawn } from '../core/shell.mjs'
 
 // Import core utilities
 import {
@@ -19,6 +20,7 @@ import {
   setCurrentDir,
   getOriginalDir,
   setOriginalDir,
+  isAbsolutePath,
   resolvePath,
   fileExists,
   isDirectory,
@@ -83,7 +85,7 @@ function createDependencies(options = {}) {
     getCurrentDir,
     getOriginalDir,
     resolvePath,
-    isAbsolutePath: path.isAbsolute,
+    isAbsolutePath,
     fileExists,
     isDirectory,
     getFileStats,
@@ -111,12 +113,14 @@ function createDependencies(options = {}) {
  */
 async function defaultExecuteCommand(command, signal, timeout = 120000) {
   const cwd = getCurrentDir()
+  const shellInvocation = buildShellSpawn(command)
 
   return new Promise((resolve, reject) => {
-    const child = spawn('sh', ['-c', command], {
+    const child = spawn(shellInvocation.command, shellInvocation.args, {
       cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: process.env
+      env: process.env,
+      windowsHide: true
     })
 
     let stdout = ''

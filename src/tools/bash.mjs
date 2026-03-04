@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod'
+import path from 'path'
 
 // Security: Commands that are blocked for security reasons
 export const BLOCKED_COMMANDS = [
@@ -66,7 +67,53 @@ Usage notes:
     - If the commands depend on each other and must run sequentially, use a single Bash call with '&&' to chain them together (e.g., \`git add . && git commit -m "message" && git push\`).
     - Use ';' only when you need to run commands sequentially but don't care if earlier commands fail
     - DO NOT use newlines to separate commands (newlines are ok in quoted strings)
-  - Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of \`cd\`. You may use \`cd\` if the User explicitly requests it.`
+- Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of \`cd\`. You may use \`cd\` if the User explicitly requests it.`
+
+const WINDOWS_GIT_BASH_PATH = /^\/([a-zA-Z])(?:\/(.*))?$/
+const WINDOWS_DRIVE_PREFIX_PATH = /^([a-zA-Z])[\\/](.*)$/
+
+function normalizeShellPath(filePath) {
+  if (typeof filePath !== 'string') return filePath
+  if (process.platform !== 'win32') return filePath
+
+  const drivePathMatch = filePath.match(WINDOWS_GIT_BASH_PATH)
+  if (drivePathMatch) {
+    const drive = drivePathMatch[1].toUpperCase()
+    const rest = drivePathMatch[2] ? drivePathMatch[2].replace(/\//g, '\\') : ''
+    return rest ? `${drive}:\\${rest}` : `${drive}:\\`
+  }
+
+  const drivePrefixMatch = filePath.match(WINDOWS_DRIVE_PREFIX_PATH)
+  if (drivePrefixMatch) {
+    const drive = drivePrefixMatch[1].toUpperCase()
+    const rest = drivePrefixMatch[2] ? drivePrefixMatch[2].replace(/\//g, '\\') : ''
+    return rest ? `${drive}:\\${rest}` : `${drive}:\\`
+  }
+
+  if (/^[a-zA-Z]:\//.test(filePath)) {
+    return filePath.replace(/\//g, '\\')
+  }
+
+  return filePath
+}
+
+function normalizeForComparison(filePath) {
+  const normalized = path.normalize(path.resolve(normalizeShellPath(filePath)))
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
+}
+
+function isWithinAllowedDirectory(filePath, allowedDir) {
+  const normalizedPath = normalizeForComparison(filePath)
+  const normalizedAllowed = normalizeForComparison(allowedDir)
+
+  if (normalizedPath === normalizedAllowed) return true
+
+  const allowedWithSep = normalizedAllowed.endsWith(path.sep)
+    ? normalizedAllowed
+    : `${normalizedAllowed}${path.sep}`
+
+  return normalizedPath.startsWith(allowedWithSep)
+}
 
 /**
  * Parse a command string into individual commands
@@ -210,10 +257,10 @@ export function validateCommand(command, originalWorkingDir, currentWorkingDir, 
       const resolvedPath = resolvePathFn ? resolvePathFn(targetDir, currentWorkingDir) : targetDir
 
       // Ensure we're not escaping the original working directory
-      if (!resolvedPath.startsWith(originalWorkingDir)) {
+      if (!isWithinAllowedDirectory(resolvedPath, originalWorkingDir)) {
         return {
           result: false,
-          message: `ERROR: cd to '${resolvedPath}' was blocked. For security, Dario Code may only change directories to child directories of the original working directory (${originalWorkingDir}) for this session.`
+          message: `ERROR: cd to '${normalizeShellPath(resolvedPath)}' was blocked. For security, Dario Code may only change directories to child directories of the original working directory (${normalizeShellPath(originalWorkingDir)}) for this session.`
         }
       }
     }
@@ -280,10 +327,7 @@ export function createBashTool(dependencies) {
         command,
         getOriginalDir(),
         getCurrentDir(),
-        (target, cwd) => {
-          if (isAbsolutePath(target)) return target
-          return resolvePath(cwd, target)
-        }
+        (target, cwd) => resolvePath(target, cwd)
       )
     },
 

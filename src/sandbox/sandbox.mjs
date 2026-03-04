@@ -10,6 +10,7 @@ import { homedir } from 'os'
 import { platform } from 'os'
 import path from 'path'
 import fs from 'fs'
+import { buildShellSpawn } from '../core/shell.mjs'
 
 /**
  * Check if the current platform supports sandboxing
@@ -328,6 +329,15 @@ export function applySandboxSettings(options = {}, settings = {}) {
   }
 }
 
+function runShellCommandSync(command) {
+  const shellInvocation = buildShellSpawn(command)
+  return spawnSync(shellInvocation.command, shellInvocation.args, {
+    encoding: 'utf8',
+    timeout: 120000,
+    windowsHide: true
+  })
+}
+
 /**
  * Execute a command with optional sandboxing
  *
@@ -351,16 +361,12 @@ export function executeWithSandbox(command, options = {}) {
   // If sandboxing not supported or disabled, run unsandboxed
   if (!isSandboxSupported() || !settings.enabled) {
     try {
-      const result = spawnSync('sh', ['-c', command], {
-        encoding: 'utf8',
-        timeout: 120000,
-        shell: true
-      })
+      const result = runShellCommandSync(command)
 
       return {
         stdout: result.stdout || '',
         stderr: result.stderr || '',
-        code: result.status || 0,
+        code: result.status ?? 1,
         sandboxed: false,
         escaped: false
       }
@@ -381,8 +387,8 @@ export function executeWithSandbox(command, options = {}) {
       const wrappedCommand = wrapCommandLinux(command, settings.projectDir)
       if (!wrappedCommand) {
         // No Linux sandbox binary available — fall back to unsandboxed
-        const result = spawnSync('sh', ['-c', command], { encoding: 'utf8', timeout: 120000 })
-        return { stdout: result.stdout || '', stderr: result.stderr || '', code: result.status || 0, sandboxed: false, escaped: false }
+        const result = runShellCommandSync(command)
+        return { stdout: result.stdout || '', stderr: result.stderr || '', code: result.status ?? 1, sandboxed: false, escaped: false }
       }
       const result = spawnSync('sh', ['-c', wrappedCommand], { encoding: 'utf8', timeout: 120000 })
       return { stdout: result.stdout || '', stderr: result.stderr || '', code: result.status || 0, sandboxed: true, escaped: false }
