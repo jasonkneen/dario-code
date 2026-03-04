@@ -535,6 +535,12 @@ const USE_COARSE_POWERSHELL_STREAMING = (() => {
   // Set to 0 to restore per-chunk streaming in PowerShell.
   return process.env.DARIO_POWERSHELL_COARSE_STREAMING !== '0'
 })()
+const COARSE_STREAM_FLUSH_MS = (() => {
+  const configured = Number.parseInt(process.env.DARIO_COARSE_STREAM_FLUSH_MS || '', 10)
+  if (Number.isFinite(configured) && configured >= 0) return configured
+  // Coarse enough to reduce repaint storms, frequent enough to show progress.
+  return 400
+})()
 const STREAM_RENDER_THROTTLE_MS = (() => {
   if (process.env.DARIO_DISABLE_STREAM_THROTTLE === '1') return 0
   const configured = Number.parseInt(process.env.DARIO_STREAM_RENDER_THROTTLE_MS || '', 10)
@@ -2690,6 +2696,23 @@ function ConversationApp({
     loadConfig().model || 'claude-sonnet-4-6'
   )
   const [contextPercent, setContextPercent] = useState(0)
+  const hasBlockingOverlay = Boolean(
+    pendingPlan ||
+    showMessageSelector ||
+    showModelSelector ||
+    showAuthSelector ||
+    showFastModeToggle ||
+    showMcpManager ||
+    showConfigManager ||
+    showApprovedToolsManager ||
+    showSessionPicker ||
+    showPluginManager ||
+    showProviderManager ||
+    showAgentManager ||
+    showToolsManager ||
+    showContextManager ||
+    showSteeringQuestions
+  )
 
   // MCP status object for footer — { text, connected, total, hasLazy }
   const mcpStatus = useMemo(() => {
@@ -3219,6 +3242,15 @@ function ConversationApp({
     setMessages(prev => [...prev, msg])
   }, [pendingPlan])
 
+  // Global Ctrl+C fallback when an overlay is active.
+  // In raw mode, SIGINT may not be delivered consistently across terminals.
+  useInput((char, key) => {
+    if (char === '\x03' || (key?.ctrl && (char === 'c' || char === 'C'))) {
+      process.stdout.write('\x1b[?25h') // Show cursor
+      process.exit(0)
+    }
+  }, { isActive: hasBlockingOverlay })
+
   useInput((char, key) => {
     if (!pendingPlan) return
     if (char === 'y' || char === 'Y') {
@@ -3368,6 +3400,18 @@ function ConversationApp({
       applyAssistantMessage(messageToRender)
     }
 
+    const scheduleAssistantFlush = (delayMs, reset = false) => {
+      if (reset && pendingAssistantTimer) {
+        clearTimeout(pendingAssistantTimer)
+        pendingAssistantTimer = null
+      }
+      if (pendingAssistantTimer) return
+      pendingAssistantTimer = setTimeout(() => {
+        pendingAssistantTimer = null
+        flushAssistantMessage()
+      }, delayMs)
+    }
+
     try {
       let currentMessages = [...messages];
 
@@ -3462,19 +3506,15 @@ function ConversationApp({
       )) {
         if (USE_COARSE_POWERSHELL_STREAMING) {
           // In PowerShell hosts, rendering every chunk can cause full-screen repaint storms.
-          // Keep only the latest snapshot and render on flush points.
+          // Keep only the latest snapshot and periodically flush it.
           pendingAssistantMessage = assistantMessage
+          scheduleAssistantFlush(COARSE_STREAM_FLUSH_MS)
           continue
         }
 
         if (STREAM_RENDER_THROTTLE_MS > 0) {
           pendingAssistantMessage = assistantMessage
-          if (!pendingAssistantTimer) {
-            pendingAssistantTimer = setTimeout(() => {
-              pendingAssistantTimer = null
-              flushAssistantMessage()
-            }, STREAM_RENDER_THROTTLE_MS)
-          }
+          scheduleAssistantFlush(STREAM_RENDER_THROTTLE_MS)
           continue
         }
 
