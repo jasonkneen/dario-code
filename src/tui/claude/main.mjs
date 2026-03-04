@@ -509,6 +509,10 @@ const IS_POWERSHELL_HOST = (() => {
   if (!IS_WINDOWS_HOST) return false
   if (process.env.DARIO_FORCE_POWERSHELL_MODE === '1') return true
   if (process.env.DARIO_FORCE_POWERSHELL_MODE === '0') return false
+  const shell = (process.env.SHELL || '').toLowerCase()
+  const msystem = (process.env.MSYSTEM || '').toLowerCase()
+  // Git Bash / MSYS2 may inherit PowerShell env vars; do not treat them as PowerShell hosts.
+  if (shell.includes('bash') || shell.includes('/bin/sh') || msystem.length > 0) return false
   return Boolean(
     process.env.PSModulePath ||
     process.env.PSExecutionPolicyPreference ||
@@ -3483,6 +3487,12 @@ function ConversationApp({
       flushAssistantMessage()
     } catch (error) {
       if (error.name !== 'AbortError') {
+        // Preserve latest partial assistant output before appending explicit stream error.
+        // This avoids losing long-running partial generations when the stream fails.
+        if (pendingAssistantMessage) {
+          applyAssistantMessage(pendingAssistantMessage)
+          pendingAssistantMessage = null
+        }
         shouldFlushPendingAssistant = false
         pendingAssistantMessage = null
         // Show error as assistant message with helpful context

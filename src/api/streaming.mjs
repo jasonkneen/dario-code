@@ -112,6 +112,12 @@ const CONTEXT_LIMITS = {
 // Retry strategy instance
 const retryStrategy = new StandardRetryStrategy(3)
 
+function logStreamEvent(...args) {
+  if (process.env.DEBUG_TUI || process.env.DARIO_LOG_STREAM_ERRORS === '1') {
+    console.error(...args)
+  }
+}
+
 /**
  * Stream a conversation turn with Claude
  * Core streaming loop for conversation turns with Claude
@@ -455,12 +461,12 @@ export async function* streamConversation(
     }
     } catch (error) {
     if (error.name === 'AbortError') {
-      console.error('Stream aborted')
+      logStreamEvent('Stream aborted')
     } else if (error.status === 401) {
       // OAuth token expired mid-session — try refresh and retry once
       const retryAttempt = options._retryAttempt || 0
       if (retryAttempt === 0) {
-        console.error('[Auth] Token expired (401), refreshing and retrying...')
+        logStreamEvent('[Auth] Token expired (401), refreshing and retrying...')
         try {
           const { getValidToken } = await import('../auth/oauth.mjs')
           const newToken = await getValidToken()
@@ -479,10 +485,10 @@ export async function* streamConversation(
             return
           }
         } catch (refreshErr) {
-          console.error('[Auth] Token refresh failed:', formatError(refreshErr))
+          logStreamEvent('[Auth] Token refresh failed:', formatError(refreshErr))
         }
       }
-      console.error('Stream error: Authentication failed (401)')
+      logStreamEvent('Stream error: Authentication failed (401)')
       throw error
     } else if (error.status === 429 || error.status === 529 || error.status === 500 || error.status === 503) {
       // Retryable error - use retry strategy
@@ -490,7 +496,7 @@ export async function* streamConversation(
       if (retryAttempt < maxRetries) {
         const delay = Math.min(20000, Math.random() * (2 ** retryAttempt) * 500)
         const errorType = error.status === 429 ? 'THROTTLING' : 'TRANSIENT'
-        console.error(`[Retry] ${errorType} error (${error.status}), attempt ${retryAttempt + 1}/${maxRetries}, waiting ${Math.round(delay)}ms`)
+        logStreamEvent(`[Retry] ${errorType} error (${error.status}), attempt ${retryAttempt + 1}/${maxRetries}, waiting ${Math.round(delay)}ms`)
         await new Promise(resolve => setTimeout(resolve, delay))
         yield* streamConversation(
           currentMessages,
@@ -501,10 +507,10 @@ export async function* streamConversation(
         )
         return
       }
-      console.error('Stream error (max retries exceeded):', formatError(error))
+      logStreamEvent('Stream error (max retries exceeded):', formatError(error))
       throw error
     } else {
-      console.error('Stream error:', formatError(error))
+      logStreamEvent('Stream error:', formatError(error))
       throw error
     }
     } // end catch
