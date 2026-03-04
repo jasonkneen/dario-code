@@ -1057,7 +1057,7 @@ const FEATURE_TIPS = [
 function WelcomeBanner({ mcpClients = [], isDefaultModel = true, model = '' }) {
   const termWidth = process.stdout.columns || 80
   const shortPath = shortenPath(process.cwd())
-  const width = Math.min(termWidth, Math.max(46, shortPath.length + 20))
+  const modelName = getModelShortName(model)
 
   // Logo block art (3 lines)
   const logoLines = [
@@ -1066,8 +1066,16 @@ function WelcomeBanner({ mcpClients = [], isDefaultModel = true, model = '' }) {
     '  \u2598\u2598 \u259D\u259D  ',
   ]
 
-  // Info lines next to logo
-  const modelName = getModelShortName(model)
+  const textWidth = (value) => Array.from(value || '').length
+  const logoWidth = Math.max(...logoLines.map(textWidth))
+  const infoWidth = Math.max(
+    textWidth(`Dario Code v${VERSION}`),
+    textWidth(modelName),
+    textWidth(shortPath)
+  )
+
+  // border(2) + horizontal padding(2) + logo/info column gap(1)
+  const width = Math.min(termWidth, Math.max(46, logoWidth + infoWidth + 5))
 
   // Pick a tip that rotates each startup
   const numStartups = loadConfig().numStartups ?? 0
@@ -1096,7 +1104,7 @@ function WelcomeBanner({ mcpClients = [], isDefaultModel = true, model = '' }) {
             React.createElement(Text, { bold: true }, 'Dario Code'),
             React.createElement(Text, { color: THEME.secondaryText }, ` v${VERSION}`)
           ),
-          React.createElement(Text, { key: 'model' },
+          React.createElement(Text, { key: 'model', wrap: 'truncate' },
             React.createElement(Text, null, modelName)
           ),
           React.createElement(Text, { key: 'cwd', color: THEME.secondaryText, wrap: 'truncate' }, shortPath)
@@ -1602,17 +1610,19 @@ function UserContentRenderer({ param, addMargin, expandedToolResults = new Set()
     case 'tool_result': {
       const isError = param.is_error
       const data = param.data
+      const isExpanded = expandedToolResults.has(param.tool_use_id)
       // Inline diff for Edit tool (has oldString/newString)
       if (!isError && data?.oldString !== undefined && data?.newString !== undefined && data.oldString !== data.newString) {
         const displayFile = data.filePath || 'file'
         return React.createElement(Box, { flexDirection: 'column', marginLeft: 4 },
           React.createElement(Text, { color: THEME.secondaryText }, '⎿ ', `Updated ${displayFile}`),
-          React.createElement(DiffBlock, {
-            oldText: data.oldString,
-            newText: data.newString,
-            filename: displayFile,
-
-          })
+          isExpanded
+            ? React.createElement(DiffBlock, {
+                oldText: data.oldString,
+                newText: data.newString,
+                filename: displayFile,
+              })
+            : React.createElement(Text, { dimColor: true }, '  … (ctrl+o to expand diff)')
         )
       }
 
@@ -1621,12 +1631,13 @@ function UserContentRenderer({ param, addMargin, expandedToolResults = new Set()
         const displayFile = data.filePath || 'file'
         return React.createElement(Box, { flexDirection: 'column', marginLeft: 4 },
           React.createElement(Text, { color: THEME.secondaryText }, '⎿ ', `Updated ${displayFile}`),
-          React.createElement(DiffBlock, {
-            oldText: data.oldContent,
-            newText: data.content,
-            filename: displayFile,
-
-          })
+          isExpanded
+            ? React.createElement(DiffBlock, {
+                oldText: data.oldContent,
+                newText: data.content,
+                filename: displayFile,
+              })
+            : React.createElement(Text, { dimColor: true }, '  … (ctrl+o to expand diff)')
         )
       }
 
@@ -1650,7 +1661,7 @@ function UserContentRenderer({ param, addMargin, expandedToolResults = new Set()
             ).join('\n')
           : JSON.stringify(param.content)
 
-      const isCollapsed = expandedToolResults.has(param.tool_use_id)
+      const isCollapsed = !isExpanded
       const lines = content.split('\n')
       const PREVIEW_LINES = 5
       const hasMore = lines.length > PREVIEW_LINES
