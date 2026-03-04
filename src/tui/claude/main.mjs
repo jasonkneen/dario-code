@@ -505,14 +505,20 @@ const VISIBLE_SUGGESTIONS = 10 // Show 10 at a time, scroll the rest
 const TRANSCRIPT_WINDOW_SIZE = 160
 const TRANSCRIPT_SCROLL_STEP = 40
 const IS_WINDOWS_HOST = process.platform === 'win32'
+const IS_GIT_BASH_HOST = (() => {
+  if (!IS_WINDOWS_HOST) return false
+  if (process.env.DARIO_FORCE_GIT_BASH_MODE === '1') return true
+  if (process.env.DARIO_FORCE_GIT_BASH_MODE === '0') return false
+  const shell = (process.env.SHELL || '').toLowerCase()
+  const msystem = (process.env.MSYSTEM || '').toLowerCase()
+  return shell.includes('bash') || shell.includes('/bin/sh') || msystem.length > 0
+})()
 const IS_POWERSHELL_HOST = (() => {
   if (!IS_WINDOWS_HOST) return false
   if (process.env.DARIO_FORCE_POWERSHELL_MODE === '1') return true
   if (process.env.DARIO_FORCE_POWERSHELL_MODE === '0') return false
-  const shell = (process.env.SHELL || '').toLowerCase()
-  const msystem = (process.env.MSYSTEM || '').toLowerCase()
   // Git Bash / MSYS2 may inherit PowerShell env vars; do not treat them as PowerShell hosts.
-  if (shell.includes('bash') || shell.includes('/bin/sh') || msystem.length > 0) return false
+  if (IS_GIT_BASH_HOST) return false
   return Boolean(
     process.env.PSModulePath ||
     process.env.PSExecutionPolicyPreference ||
@@ -545,8 +551,11 @@ const STREAM_RENDER_THROTTLE_MS = (() => {
   if (process.env.DARIO_DISABLE_STREAM_THROTTLE === '1') return 0
   const configured = Number.parseInt(process.env.DARIO_STREAM_RENDER_THROTTLE_MS || '', 10)
   if (Number.isFinite(configured) && configured >= 0) return configured
-  // Keep throttling targeted to PowerShell to avoid unnecessary noise elsewhere.
-  return IS_POWERSHELL_HOST ? 220 : 0
+  // Windows terminals can repaint full frames on rapid Ink updates.
+  // Git Bash gets a lighter throttle than PowerShell to keep responsiveness.
+  if (IS_POWERSHELL_HOST) return 220
+  if (IS_GIT_BASH_HOST) return 120
+  return 0
 })()
 
 // Standard slash commands — TUI-only commands that need direct access to TUI context.
@@ -3534,7 +3543,6 @@ function ConversationApp({
           pendingAssistantMessage = null
         }
         shouldFlushPendingAssistant = false
-        pendingAssistantMessage = null
         // Show error as assistant message with helpful context
         const errorText = error.message || formatError(error) || 'Unknown error occurred'
 
