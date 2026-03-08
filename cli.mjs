@@ -6,8 +6,13 @@
 
 import { Command } from 'commander';
 import { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { homedir } from 'os';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+
+const _require = createRequire(import.meta.url);
+const _pkg = _require('./package.json');
 
 const program = new Command();
 
@@ -37,7 +42,7 @@ loadEnvFile(join(homedir(), '.env'));
 program
   .name('dario')
   .description('Dario Code - an open source CLI for Claude')
-  .version('1.0.0')
+  .version(_pkg.version || '1.0.0')
   .argument('[prompt]', 'Your prompt')
   .option('-c, --cwd <cwd>', 'Current working directory', process.cwd())
   .option('-d, --debug', 'Enable debug mode')
@@ -65,6 +70,8 @@ program
   .option('--from-pr <pr>', 'Resume session linked to a GitHub PR number or URL')
   .option('--max-turns <n>', 'Maximum number of agentic turns (0 = unlimited)', parseInt)
   .option('--input-format <format>', 'Input format for stdin: text, stream-json')
+  .option('--setting-sources <sources>', 'Comma-separated setting scopes to load (user,project,local,cli,managed)')
+  .option('--settings <json>', 'Load settings from JSON file path or inline JSON string')
   .action(async (prompt, options) => {
     // Set options in env for TUI to read
     if (options.debug) process.env.DEBUG_TUI = '1';
@@ -86,6 +93,24 @@ program
         const resolvedDir = dir.startsWith('/') ? dir : join(process.cwd(), dir);
         process.env.DARIO_ADD_DIRS = (process.env.DARIO_ADD_DIRS || '') + resolvedDir + ':';
       }
+    }
+
+    // Handle --setting-sources
+    if (options.settingSources) {
+      const { setSettingSources } = await import('./src/core/config.mjs')
+      setSettingSources(options.settingSources.split(',').map(s => s.trim()))
+    }
+
+    // Handle --settings (inline JSON or file path)
+    if (options.settings) {
+      const { setCliSettings } = await import('./src/core/config.mjs')
+      let parsed
+      if (options.settings.startsWith('{')) {
+        parsed = JSON.parse(options.settings)
+      } else {
+        parsed = JSON.parse(readFileSync(options.settings, 'utf8'))
+      }
+      setCliSettings(parsed)
     }
 
     // Handle --init-only
