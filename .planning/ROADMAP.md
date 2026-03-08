@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Settings Hierarchy** - 5-level settings precedence with deep merge and array concatenation (completed 2026-03-08)
 - [ ] **Phase 2: Hook Config Migration** - Nested config format, backward compat, deduplication, and session snapshot
-- [ ] **Phase 3: Hook Events & Handlers** - 6 new event types and 4 new handler types (HTTP, prompt, agent, async)
+- [x] **Phase 3: Hook Events & Handlers** - 6 new event types and 4 new handler types (HTTP, prompt, agent, async) (completed 2026-03-08)
 - [ ] **Phase 4: Permission Rules** - Advanced permission syntax with Tool(specifier), path patterns, and 3-tier evaluation
 - [ ] **Phase 5: CLI Flags** - All 18 missing CLI flags (simple and complex)
 - [ ] **Phase 6: Checkpointing** - File change tracking, checkpoint creation, and rewind UI
@@ -143,7 +143,7 @@ Note: Phase 6 (Checkpointing) is architecturally independent and could execute i
 |-------|----------------|--------|-----------|
 | 1. Settings Hierarchy | 2/2 | Complete   | 2026-03-08 |
 | 2. Hook Config Migration | 1/2 | In Progress|  |
-| 3. Hook Events & Handlers | 1/2 | In Progress|  |
+| 3. Hook Events & Handlers | 2/2 | Complete   | 2026-03-08 |
 | 4. Permission Rules | 0/0 | Not started | - |
 | 5. CLI Flags | 0/0 | Not started | - |
 | 6. Checkpointing | 0/0 | Not started | - |

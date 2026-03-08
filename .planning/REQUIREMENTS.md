@@ -26,12 +26,12 @@
 
 ### Hook Event Types
 
-- [ ] **HEVT-01**: `PostToolUseFailure` event fires after tool call failure
-- [ ] **HEVT-02**: `SubagentStart` event fires before subagent spawns
-- [ ] **HEVT-03**: `InstructionsLoaded` event fires after CLAUDE.md is loaded
-- [ ] **HEVT-04**: `ConfigChange` event fires when config files change (can block)
-- [ ] **HEVT-05**: `WorktreeCreate` event fires when worktree is created
-- [ ] **HEVT-06**: `WorktreeRemove` event fires when worktree is removed
+- [x] **HEVT-01**: `PostToolUseFailure` event fires after tool call failure
+- [x] **HEVT-02**: `SubagentStart` event fires before subagent spawns
+- [x] **HEVT-03**: `InstructionsLoaded` event fires after CLAUDE.md is loaded
+- [x] **HEVT-04**: `ConfigChange` event fires when config files change (can block)
+- [x] **HEVT-05**: `WorktreeCreate` event fires when worktree is created
+- [x] **HEVT-06**: `WorktreeRemove` event fires when worktree is removed
 
 ### Hook Handler Types
 
@@ -156,12 +156,12 @@
 | HOOK-04 | Phase 2 | Complete |
 | HOOK-05 | Phase 2 | Complete |
 | HOOK-06 | Phase 2 | Complete |
-| HEVT-01 | Phase 3 | Pending |
-| HEVT-02 | Phase 3 | Pending |
-| HEVT-03 | Phase 3 | Pending |
-| HEVT-04 | Phase 3 | Pending |
-| HEVT-05 | Phase 3 | Pending |
-| HEVT-06 | Phase 3 | Pending |
+| HEVT-01 | Phase 3 | Complete |
+| HEVT-02 | Phase 3 | Complete |
+| HEVT-03 | Phase 3 | Complete |
+| HEVT-04 | Phase 3 | Complete |
+| HEVT-05 | Phase 3 | Complete |
+| HEVT-06 | Phase 3 | Complete |
 | HTYP-01 | Phase 3 | Complete |
 | HTYP-02 | Phase 3 | Complete |
 | HTYP-03 | Phase 3 | Complete |
