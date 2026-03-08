@@ -12,6 +12,12 @@
  * - PermissionRequest: When permissions are requested
  * - Notification: When notifications occur
  * - Stop: When Claude is about to stop (for final actions)
+ * - PostToolUseFailure: When a tool call fails with an error
+ * - SubagentStart: Before a subagent is spawned
+ * - InstructionsLoaded: After CLAUDE.md content is loaded
+ * - ConfigChange: When hook configuration changes mid-session
+ * - WorktreeCreate: When a git worktree is created for an agent
+ * - WorktreeRemove: When a git worktree is removed
  *
  * Configuration in settings.json:
  * {
@@ -153,7 +159,7 @@ export function getCachedHooks() {
  * Loads hooks fresh, computes hash, compares to snapshot hash.
  * @returns {{ changed: boolean, warning: string|null }}
  */
-export function checkHookIntegrity() {
+export async function checkHookIntegrity() {
   if (_hookHash === null) {
     return { changed: false, warning: null }
   }
@@ -162,6 +168,13 @@ export function checkHookIntegrity() {
   const freshHash = computeHash(freshHooks)
 
   if (freshHash !== _hookHash) {
+    // Fire ConfigChange hook when config has changed
+    try {
+      await runConfigChange({ oldHash: _hookHash, newHash: freshHash })
+    } catch (e) {
+      // Non-fatal
+    }
+
     return {
       changed: true,
       warning: 'Hook configuration has changed since session start. The running session uses the original snapshot. Restart to pick up changes.',

@@ -270,6 +270,18 @@ IMPORTANT: Before you begin work, think about what the code you're editing is su
     .map(f => `# From ${f.source} (${f.path}):\n${f.content}`)
     .join('\n\n');
 
+  // Fire InstructionsLoaded hook after CLAUDE.md content is loaded
+  if (claudeMdContent) {
+    try {
+      const { runInstructionsLoaded } = await import('../core/hooks.mjs');
+      await runInstructionsLoaded(claudeMdContent, {
+        sources: enabledClaudeFiles.map(f => f.source),
+      });
+    } catch (e) {
+      // Non-fatal: hook failure should not prevent prompt generation
+    }
+  }
+
   const segments = [mainInstructions, envContext];
 
   if (claudeMdContent) {

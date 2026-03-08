@@ -302,17 +302,17 @@ describe('HOOK-06: Session snapshot', () => {
     expect(getCachedHooks()).toBeNull()
   })
 
-  it('checkHookIntegrity returns changed:false when config unchanged', () => {
+  it('checkHookIntegrity returns changed:false when config unchanged', async () => {
     loadSettings.mockReturnValue(mockHooksConfig)
 
     snapshotHooks()
-    const result = checkHookIntegrity()
+    const result = await checkHookIntegrity()
 
     expect(result.changed).toBe(false)
     expect(result.warning).toBeNull()
   })
 
-  it('checkHookIntegrity returns changed:true when config changes mid-session', () => {
+  it('checkHookIntegrity returns changed:true when config changes mid-session', async () => {
     loadSettings.mockReturnValue(mockHooksConfig)
     snapshotHooks()
 
@@ -323,7 +323,7 @@ describe('HOOK-06: Session snapshot', () => {
       },
     })
 
-    const result = checkHookIntegrity()
+    const result = await checkHookIntegrity()
     expect(result.changed).toBe(true)
     expect(result.warning).toBeTruthy()
   })

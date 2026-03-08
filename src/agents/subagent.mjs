@@ -163,6 +163,23 @@ export function createGeneralAgent(options = {}) {
  * Spawn a subagent
  */
 export async function spawnAgent(config, task, context = {}) {
+  // Fire SubagentStart hook before agent creation
+  try {
+    const { runSubagentStart, HookAction } = await import('../core/hooks.mjs')
+    const hookResult = await runSubagentStart(config, context)
+    if (hookResult.action === HookAction.BLOCK) {
+      return {
+        agentId: null,
+        config,
+        task,
+        status: 'blocked',
+        message: hookResult.results?.find(r => r.reason)?.reason || 'Blocked by SubagentStart hook',
+      }
+    }
+  } catch (e) {
+    // Non-fatal: hook failure should not prevent agent spawn
+  }
+
   const agentId = generateAgentId()
 
   const agent = {

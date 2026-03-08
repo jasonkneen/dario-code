@@ -18,7 +18,7 @@ import { join } from 'path'
 import { homedir } from 'os'
 
 // Import hook system
-import { runStop, runPreToolUse, runPostToolUse, runSessionStart, HookAction } from './hooks.mjs'
+import { runStop, runPreToolUse, runPostToolUse, runPostToolUseFailure, runSessionStart, HookAction } from './hooks.mjs'
 
 /**
  * Load environment variables from a .env file
@@ -331,6 +331,27 @@ export const darioHooksAPI = {
     } catch (e) {
       if (verbose) {
         console.error('[Hook] PostToolUse error:', e.message)
+      }
+    }
+  },
+
+  /**
+   * Notify that a tool execution failed
+   *
+   * Runs PostToolUseFailure hooks. Errors are silently ignored.
+   *
+   * @param {string} toolName - Name of the tool
+   * @param {Object} input - Tool input parameters
+   * @param {Error|string} error - The error that occurred
+   * @param {boolean} [verbose=false] - Enable verbose logging
+   * @returns {Promise<void>}
+   */
+  async notifyToolFailure(toolName, input, error, verbose = false) {
+    try {
+      await runPostToolUseFailure(toolName, input, error, {}, verbose)
+    } catch (e) {
+      if (verbose) {
+        console.error('[Hook] PostToolUseFailure error:', e.message)
       }
     }
   }

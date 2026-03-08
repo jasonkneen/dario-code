@@ -48,7 +48,7 @@ function worktreeBranchName(agentName) {
  * @param {string} projectDir - The project root (must be a git repo)
  * @returns {{ worktreePath: string, branch: string, cleanup: Function }}
  */
-export function createAgentWorktree(agentName, projectDir = process.cwd()) {
+export async function createAgentWorktree(agentName, projectDir = process.cwd()) {
   if (!isGitRepo(projectDir)) {
     throw new Error(
       `isolation:worktree requires a git repository. '${projectDir}' is not a git repo.`
@@ -72,7 +72,7 @@ export function createAgentWorktree(agentName, projectDir = process.cwd()) {
    * @param {{ keepIfChanged?: boolean }} options
    * @returns {{ kept: boolean, worktreePath: string, branch: string }}
    */
-  function cleanup({ keepIfChanged = true } = {}) {
+  async function cleanup({ keepIfChanged = true } = {}) {
     try {
       if (keepIfChanged) {
         // Check for uncommitted changes or commits ahead of HEAD
@@ -88,6 +88,14 @@ export function createAgentWorktree(agentName, projectDir = process.cwd()) {
         if (hasChanges || hasCommits) {
           return { kept: true, worktreePath, branch }
         }
+      }
+
+      // Fire WorktreeRemove hook before removal
+      try {
+        const { runWorktreeRemove } = await import('../core/hooks.mjs')
+        await runWorktreeRemove(worktreePath, { branch, projectDir })
+      } catch (e) {
+        // Non-fatal: hook failure should not prevent cleanup
       }
 
       // No changes — remove worktree and branch
