@@ -32,11 +32,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Array settings (e.g., permissions.allow) concatenate across scopes rather than overwriting
   4. `.claude/settings.local.json` is loaded as local scope and is gitignored by default
   5. `--setting-sources` and `--settings` flags control which scopes load and inject inline settings
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+- [ ] 01-01-PLAN.md — 5-level settings engine with deep merge and array concatenation (TDD)
+- [ ] 01-02-PLAN.md — Wire --setting-sources and --settings CLI flags
 
 ### Phase 2: Hook Config Migration
 **Goal**: Hook configuration supports the nested format alongside the existing flat format, with deduplication and session snapshot
@@ -141,7 +141,7 @@ Note: Phase 6 (Checkpointing) is architecturally independent and could execute i
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Settings Hierarchy | 0/0 | Not started | - |
+| 1. Settings Hierarchy | 0/2 | Planning complete | - |
 | 2. Hook Config Migration | 0/0 | Not started | - |
 | 3. Hook Events & Handlers | 0/0 | Not started | - |
 | 4. Permission Rules | 0/0 | Not started | - |
