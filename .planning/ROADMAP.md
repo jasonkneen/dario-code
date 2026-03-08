@@ -64,11 +64,11 @@ Plans:
   3. Prompt hooks send a prompt to Claude for yes/no evaluation and return the decision
   4. Agent hooks spawn a subagent with read-only tools (Read, Grep, Glob) and return its output
   5. Async-mode hooks run in background without blocking the tool pipeline
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md — Multi-type handler dispatch: HTTP, prompt, agent, and async mode (TDD)
+- [ ] 03-02-PLAN.md — Six new event types with lifecycle wiring (TDD)
 
 ### Phase 4: Permission Rules
 **Goal**: Users can define fine-grained permission rules using Tool(specifier) syntax, path patterns, and domain matching with 3-tier deny/ask/allow evaluation
@@ -143,7 +143,7 @@ Note: Phase 6 (Checkpointing) is architecturally independent and could execute i
 |-------|----------------|--------|-----------|
 | 1. Settings Hierarchy | 2/2 | Complete   | 2026-03-08 |
 | 2. Hook Config Migration | 1/2 | In Progress|  |
-| 3. Hook Events & Handlers | 0/0 | Not started | - |
+| 3. Hook Events & Handlers | 0/2 | Not started | - |
 | 4. Permission Rules | 0/0 | Not started | - |
 | 5. CLI Flags | 0/0 | Not started | - |
 | 6. Checkpointing | 0/0 | Not started | - |
