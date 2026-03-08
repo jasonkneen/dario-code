@@ -190,6 +190,10 @@ function normalizeHandler(handler) {
     ...(handler.environment != null ? { environment: handler.environment } : {}),
     statusMessage: handler.statusMessage ?? null,
     once: handler.once ?? false,
+    async: handler.async ?? false,
+    url: handler.url ?? null,
+    prompt: handler.prompt ?? null,
+    model: handler.model ?? null,
   }
 }
 
@@ -424,22 +428,195 @@ async function executeHook(hook, context, verbose = false) {
 }
 
 /**
- * Dispatch a single normalized handler.
- * Currently only supports type "command" — calls existing executeHook logic.
+ * Execute an HTTP webhook hook.
+ * POSTs event JSON to handler.url (falls back to handler.command[0]).
+ * Uses AbortController for timeout.
+ * @param {Object} handler - Normalized handler with url field
+ * @param {Object} context - Execution context
+ * @param {boolean} verbose
+ * @returns {Promise<Object>} Hook result
+ */
+export async function executeHttpHook(handler, context, verbose = false) {
+  const url = handler.url || (handler.command && handler.command[0])
+  const timeout = handler.timeout || DEFAULT_TIMEOUT
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+  try {
+    if (verbose) {
+      process.stderr.write(`[Hook] HTTP POST to: ${url}\n`)
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        hookType: context.hookType,
+        toolName: context.toolName || null,
+        input: context.input || null,
+        output: context.output || null,
+        sessionId: context.sessionId || null,
+      }),
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+    const body = await response.json()
+    return {
+      success: response.ok,
+      action: body.action || 'continue',
+      message: body.message || null,
+      reason: body.reason || null,
+      modifiedInput: body.modifiedInput || null,
+    }
+  } catch (err) {
+    clearTimeout(timeoutId)
+    if (verbose) {
+      process.stderr.write(`[Hook] HTTP hook error: ${err.message}\n`)
+    }
+    return { success: false, action: 'continue', error: err.message }
+  }
+}
+
+/**
+ * Execute a prompt-based hook.
+ * Sends handler.prompt (falls back to handler.command[0]) to Claude for allow/deny.
+ * @param {Object} handler - Normalized handler with prompt field
+ * @param {Object} context - Execution context
+ * @param {boolean} verbose
+ * @returns {Promise<Object>} Hook result
+ */
+export async function executePromptHook(handler, context, verbose = false) {
+  try {
+    const { getClient } = await import('../api/client.mjs')
+    const client = await getClient()
+
+    const promptText = handler.prompt || (handler.command && handler.command[0])
+    const model = handler.model || 'claude-haiku-4-5-20251001'
+    const contextJson = JSON.stringify({
+      hookType: context.hookType,
+      toolName: context.toolName,
+      input: context.input,
+    })
+
+    if (verbose) {
+      process.stderr.write(`[Hook] Prompt hook using model: ${model}\n`)
+    }
+
+    const response = await client.messages.create({
+      model,
+      max_tokens: 100,
+      messages: [{
+        role: 'user',
+        content: `${promptText}\n\nContext:\n${contextJson}\n\nRespond with JSON: {"decision": "allow"} or {"decision": "deny", "reason": "..."}`,
+      }],
+    })
+
+    const text = response.content[0].text
+    const parsed = JSON.parse(text)
+    return {
+      success: true,
+      action: parsed.decision === 'deny' ? 'block' : 'continue',
+      reason: parsed.reason || null,
+      message: text,
+    }
+  } catch (err) {
+    if (verbose) {
+      process.stderr.write(`[Hook] Prompt hook error: ${err.message}\n`)
+    }
+    return { success: false, action: 'continue', error: err.message }
+  }
+}
+
+/**
+ * Execute an agent hook.
+ * Spawns a read-only subagent (EXPLORE type) with handler.command[0] as system prompt.
  * @param {Object} handler - Normalized handler
  * @param {Object} context - Execution context
  * @param {boolean} verbose
  * @returns {Promise<Object>} Hook result
  */
-async function dispatchHook(handler, context, verbose = false) {
-  // Build a hook-like object compatible with executeHook
-  const hookObj = {
-    command: handler.command,
-    timeout: handler.timeout,
-    environment: handler.environment,
+export async function executeAgentHook(handler, context, verbose = false) {
+  try {
+    const { createAgentConfig, spawnAgent, AgentType } = await import('../agents/subagent.mjs')
+    const config = createAgentConfig({
+      type: AgentType.EXPLORE,
+      systemPrompt: handler.command[0],
+      maxTokens: 2048,
+      timeout: handler.timeout || DEFAULT_TIMEOUT,
+    })
+
+    if (verbose) {
+      process.stderr.write(`[Hook] Spawning agent hook with prompt: ${handler.command[0]}\n`)
+    }
+
+    const result = await spawnAgent(config, JSON.stringify(context), context)
+    return {
+      success: true,
+      action: 'continue',
+      message: result.message,
+    }
+  } catch (err) {
+    if (verbose) {
+      process.stderr.write(`[Hook] Agent hook error: ${err.message}\n`)
+    }
+    return { success: false, action: 'continue', error: err.message }
+  }
+}
+
+/**
+ * Dispatch a single normalized handler.
+ * Routes by handler.type: http, prompt, agent, or command (default).
+ * Handles async mode for command-type hooks (fire-and-forget).
+ * @param {Object} handler - Normalized handler
+ * @param {Object} context - Execution context
+ * @param {boolean} verbose
+ * @returns {Promise<Object>} Hook result
+ */
+export async function dispatchHook(handler, context, verbose = false) {
+  // Handle async mode (fire-and-forget) for command type only
+  if (handler.async && (handler.type === 'command' || !handler.type)) {
+    const hookObj = {
+      command: handler.command,
+      timeout: handler.timeout,
+      environment: handler.environment,
+    }
+    executeHook(hookObj, context, verbose).catch(err => {
+      if (verbose) {
+        process.stderr.write(`[Hook] Async error: ${err.message}\n`)
+      }
+    })
+    const result = { success: true, action: 'continue' }
+    if (handler.statusMessage) {
+      result.statusMessage = handler.statusMessage
+    }
+    return result
   }
 
-  const result = await executeHook(hookObj, context, verbose)
+  let result
+
+  switch (handler.type) {
+    case 'http':
+      result = await executeHttpHook(handler, context, verbose)
+      break
+    case 'prompt':
+      result = await executePromptHook(handler, context, verbose)
+      break
+    case 'agent':
+      result = await executeAgentHook(handler, context, verbose)
+      break
+    case 'command':
+    default: {
+      const hookObj = {
+        command: handler.command,
+        timeout: handler.timeout,
+        environment: handler.environment,
+      }
+      result = await executeHook(hookObj, context, verbose)
+      break
+    }
+  }
 
   // Attach statusMessage to result for downstream consumers
   if (handler.statusMessage) {
@@ -697,4 +874,8 @@ export default {
   getCachedHooks,
   checkHookIntegrity,
   clearHookSnapshot,
+  executeHttpHook,
+  executePromptHook,
+  executeAgentHook,
+  dispatchHook,
 }

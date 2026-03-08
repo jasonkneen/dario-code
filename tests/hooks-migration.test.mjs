@@ -51,6 +51,10 @@ describe('HOOK-01: normalizeHookConfig', () => {
         timeout: 5000,
         statusMessage: null,
         once: false,
+        async: false,
+        url: null,
+        prompt: null,
+        model: null,
       }],
     }])
   })
@@ -66,6 +70,10 @@ describe('HOOK-01: normalizeHookConfig', () => {
         command: ['./test.sh'],
         statusMessage: null,
         once: false,
+        async: false,
+        url: null,
+        prompt: null,
+        model: null,
       }],
     }])
   })
