@@ -186,39 +186,39 @@
 | FLAG-11 | Phase 5 | Pending |
 | FLAG-12 | Phase 5 | Pending |
 | FLAG-13 | Phase 5 | Pending |
-| FLAG-14 | Phase 6 | Pending |
-| FLAG-15 | Phase 6 | Pending |
-| FLAG-16 | Phase 6 | Pending |
-| FLAG-17 | Phase 6 | Pending |
-| FLAG-18 | Phase 6 | Pending |
-| CHKP-01 | Phase 7 | Pending |
-| CHKP-02 | Phase 7 | Pending |
-| CHKP-03 | Phase 7 | Pending |
-| CHKP-04 | Phase 7 | Pending |
-| CHKP-05 | Phase 7 | Pending |
-| CHKP-06 | Phase 7 | Pending |
-| CHKP-07 | Phase 7 | Pending |
-| CHKP-08 | Phase 7 | Pending |
-| SETT-01 | Phase 8 | Pending |
-| SETT-02 | Phase 8 | Pending |
-| SETT-03 | Phase 8 | Pending |
-| SETT-04 | Phase 8 | Pending |
-| SETT-05 | Phase 8 | Pending |
-| SETT-06 | Phase 8 | Pending |
-| SETT-07 | Phase 8 | Pending |
-| SETT-08 | Phase 8 | Pending |
-| SETT-09 | Phase 8 | Pending |
-| SETT-10 | Phase 8 | Pending |
-| SETT-11 | Phase 8 | Pending |
-| CMD-01 | Phase 8 | Pending |
-| CMD-02 | Phase 8 | Pending |
-| CMD-03 | Phase 8 | Pending |
+| FLAG-14 | Phase 5 | Pending |
+| FLAG-15 | Phase 5 | Pending |
+| FLAG-16 | Phase 5 | Pending |
+| FLAG-17 | Phase 5 | Pending |
+| FLAG-18 | Phase 5 | Pending |
+| CHKP-01 | Phase 6 | Pending |
+| CHKP-02 | Phase 6 | Pending |
+| CHKP-03 | Phase 6 | Pending |
+| CHKP-04 | Phase 6 | Pending |
+| CHKP-05 | Phase 6 | Pending |
+| CHKP-06 | Phase 6 | Pending |
+| CHKP-07 | Phase 6 | Pending |
+| CHKP-08 | Phase 6 | Pending |
+| SETT-01 | Phase 7 | Pending |
+| SETT-02 | Phase 7 | Pending |
+| SETT-03 | Phase 7 | Pending |
+| SETT-04 | Phase 7 | Pending |
+| SETT-05 | Phase 7 | Pending |
+| SETT-06 | Phase 7 | Pending |
+| SETT-07 | Phase 7 | Pending |
+| SETT-08 | Phase 7 | Pending |
+| SETT-09 | Phase 7 | Pending |
+| SETT-10 | Phase 7 | Pending |
+| SETT-11 | Phase 7 | Pending |
+| CMD-01 | Phase 7 | Pending |
+| CMD-02 | Phase 7 | Pending |
+| CMD-03 | Phase 7 | Pending |
 
 **Coverage:**
-- v1 requirements: 66 total
-- Mapped to phases: 66
-- Unmapped: 0 ✓
+- v1 requirements: 70 total
+- Mapped to phases: 70
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-08*
-*Last updated: 2026-03-08 after initial definition*
+*Last updated: 2026-03-08 after roadmap creation*
