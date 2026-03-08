@@ -35,10 +35,10 @@
 
 ### Hook Handler Types
 
-- [ ] **HTYP-01**: HTTP handler (`type: "http"`) POSTs event JSON to URL, reads decision from response
-- [ ] **HTYP-02**: Prompt handler (`type: "prompt"`) sends prompt to Claude for yes/no evaluation
-- [ ] **HTYP-03**: Agent handler (`type: "agent"`) spawns subagent with Read/Grep/Glob tools
-- [ ] **HTYP-04**: Async mode (`async: true`) runs command hooks in background without blocking
+- [x] **HTYP-01**: HTTP handler (`type: "http"`) POSTs event JSON to URL, reads decision from response
+- [x] **HTYP-02**: Prompt handler (`type: "prompt"`) sends prompt to Claude for yes/no evaluation
+- [x] **HTYP-03**: Agent handler (`type: "agent"`) spawns subagent with Read/Grep/Glob tools
+- [x] **HTYP-04**: Async mode (`async: true`) runs command hooks in background without blocking
 
 ### Permission Rules
 
@@ -162,10 +162,10 @@
 | HEVT-04 | Phase 3 | Pending |
 | HEVT-05 | Phase 3 | Pending |
 | HEVT-06 | Phase 3 | Pending |
-| HTYP-01 | Phase 3 | Pending |
-| HTYP-02 | Phase 3 | Pending |
-| HTYP-03 | Phase 3 | Pending |
-| HTYP-04 | Phase 3 | Pending |
+| HTYP-01 | Phase 3 | Complete |
+| HTYP-02 | Phase 3 | Complete |
+| HTYP-03 | Phase 3 | Complete |
+| HTYP-04 | Phase 3 | Complete |
 | PERM-01 | Phase 4 | Pending |
 | PERM-02 | Phase 4 | Pending |
 | PERM-03 | Phase 4 | Pending |
