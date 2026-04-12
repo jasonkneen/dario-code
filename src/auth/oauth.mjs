@@ -21,10 +21,10 @@ const BASE_CONFIG = {
 // Console OAuth (creates API key)
 const ANTHROPIC_CONFIG = {
   ...BASE_CONFIG,
-  AUTHORIZE_URL: 'https://console.anthropic.com/oauth/authorize',
-  TOKEN_URL: 'https://console.anthropic.com/v1/oauth/token',
+  AUTHORIZE_URL: 'https://platform.claude.com/oauth/authorize',
+  TOKEN_URL: 'https://platform.claude.com/v1/oauth/token',
   API_KEY_URL: 'https://api.anthropic.com/api/oauth/claude_cli/create_api_key',
-  SUCCESS_URL: 'https://console.anthropic.com/buy_credits?returnUrl=/oauth/code/success',
+  SUCCESS_URL: 'https://platform.claude.com/buy_credits?returnUrl=/oauth/code/success%3Fapp%3Dclaude-code',
   CLIENT_ID: '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 }
 
@@ -32,10 +32,10 @@ const ANTHROPIC_CONFIG = {
 const CLAUDE_MAX_CONFIG = {
   REDIRECT_PORT: 54545,
   MANUAL_REDIRECT_URL: '/oauth/code/callback',
-  SCOPES: ['org:create_api_key', 'user:profile', 'user:inference'],
-  AUTHORIZE_URL: 'https://claude.ai/oauth/authorize',
-  TOKEN_URL: 'https://console.anthropic.com/v1/oauth/token',
-  SUCCESS_URL: 'https://claude.ai/chat',
+  SCOPES: ['user:profile', 'user:inference', 'user:sessions:claude_code', 'user:mcp_servers', 'user:file_upload'],
+  AUTHORIZE_URL: 'https://claude.com/cai/oauth/authorize',
+  TOKEN_URL: 'https://platform.claude.com/v1/oauth/token',
+  SUCCESS_URL: 'https://platform.claude.com/oauth/code/success?app=claude-code',
   CLIENT_ID: '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 }
 
@@ -370,20 +370,26 @@ export async function authenticateWithOAuth(getCallbackUrl) {
   }
 
 
-  // Complete OAuth - just get tokens, DON'T create API key
-  const result = await oauthClient.completeLogin(code, verifier, state, false)
+  // Claude subscriptions use bearer inference tokens.
+  // Console OAuth must be exchanged into an API key instead.
+  const createApiKey = oauthMode !== 'claude'
+  const result = await oauthClient.completeLogin(code, verifier, state, createApiKey)
 
   // Save OAuth tokens
   const config = getConfig()
   config.oauthMode = oauthMode
   config.oauthTokens = result.tokens
+  if (result.apiKey) {
+    config.primaryApiKey = result.apiKey
+  }
   saveConfig(config)
 
   // Save to token file
   saveToken({
     access_token: result.tokens.access,
     refresh_token: result.tokens.refresh,
-    expires: result.tokens.expires
+    expires: result.tokens.expires,
+    api_key: result.apiKey || undefined
   })
 
   // Verify token was persisted
@@ -403,7 +409,12 @@ export async function authenticateWithOAuth(getCallbackUrl) {
 export function saveToken(token) {
   const dir = path.dirname(TOKEN_PATH)
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(TOKEN_PATH, JSON.stringify({ ...token, savedAt: Date.now() }, null, 2))
+  fs.writeFileSync(TOKEN_PATH, JSON.stringify({
+    ...token,
+    savedAt: Date.now(),
+    oauth_mode: oauthMode,
+    oauth_config_version: 2
+  }, null, 2))
 }
 
 export function loadToken() {
@@ -423,36 +434,39 @@ export async function getValidToken() {
   // 1. Check our own token file
   const token = loadToken()
   if (token) {
-    const expiresAt = token.expires || (token.savedAt + (token.expires_in || 3600) * 1000)
-    const bufferMs = 5 * 60 * 1000 // 5 minute buffer
+    const tokenMode = token.oauth_mode || getConfig().oauthMode || 'anthropic'
+    if (tokenMode === 'claude') {
+      const expiresAt = token.expires || (token.savedAt + (token.expires_in || 3600) * 1000)
+      const bufferMs = 5 * 60 * 1000 // 5 minute buffer
 
-    if (Date.now() <= expiresAt - bufferMs) {
-      // Token is still valid
-      return token.access_token || token.api_key
-    }
+      if (Date.now() <= expiresAt - bufferMs) {
+        // Token is still valid
+        return token.access_token
+      }
 
-    // Token expired — try refresh
-    if (token.refresh_token) {
-      try {
-        const refreshed = await oauthClient.refreshAccessToken(token.refresh_token)
-        const newToken = {
-          access_token: refreshed.access,
-          refresh_token: refreshed.refresh,
-          expires: refreshed.expires,
-        }
-        saveToken(newToken)
+      // Token expired — try refresh
+      if (token.refresh_token) {
+        try {
+          const refreshed = await oauthClient.refreshAccessToken(token.refresh_token)
+          const newToken = {
+            access_token: refreshed.access,
+            refresh_token: refreshed.refresh,
+            expires: refreshed.expires,
+          }
+          saveToken(newToken)
 
-        // Also update config
-        const config = getConfig()
-        if (config.oauthTokens) {
-          config.oauthTokens = { ...config.oauthTokens, access: refreshed.access, refresh: refreshed.refresh, expires: refreshed.expires }
-          saveConfig(config)
-        }
+          // Also update config
+          const config = getConfig()
+          if (config.oauthTokens) {
+            config.oauthTokens = { ...config.oauthTokens, access: refreshed.access, refresh: refreshed.refresh, expires: refreshed.expires }
+            saveConfig(config)
+          }
 
-        return refreshed.access
-      } catch (err) {
-        if (process.env.DEBUG_OAUTH) {
-          console.error('[OAuth] Token refresh failed:', err.message)
+          return refreshed.access
+        } catch (err) {
+          if (process.env.DEBUG_OAUTH) {
+            console.error('[OAuth] Token refresh failed:', err.message)
+          }
         }
       }
     }
@@ -533,6 +547,12 @@ export function logout() {
 }
 
 export function getAuthInfo() {
+  const config = getConfig()
+  const savedApiKey = process.env.ANTHROPIC_API_KEY || config.apiKey || config.primaryApiKey
+  if (savedApiKey) {
+    return { method: 'api_key', authenticated: true }
+  }
+
   // Check Dario's own token
   const token = loadToken()
   if (token) {
@@ -569,24 +589,14 @@ export function getAuthInfo() {
     }
   } catch {}
 
-  // Check Dario config
-  try {
-    const configPath = path.join(os.homedir(), '.dario', 'config.json')
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
-      if (config.oauthTokens?.access) {
-        return {
-          method: 'oauth',
-          authenticated: true,
-          expiresAt: config.oauthTokens.expires
-        }
-      }
+  if (config.oauthTokens?.access) {
+    return {
+      method: 'oauth',
+      authenticated: true,
+      expiresAt: config.oauthTokens.expires
     }
-  } catch {}
-
-  if (process.env.ANTHROPIC_API_KEY) {
-    return { method: 'api_key', authenticated: true }
   }
+
   return { method: 'none', authenticated: false }
 }
 

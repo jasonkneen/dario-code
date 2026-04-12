@@ -6,12 +6,13 @@
 import { generatePKCE } from '@openauthjs/openauth/pkce'
 
 const DEFAULT_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
-const AUTHORIZATION_ENDPOINT_MAX = 'https://claude.ai/oauth/authorize'
-const AUTHORIZATION_ENDPOINT_CONSOLE = 'https://console.anthropic.com/oauth/authorize'
-const TOKEN_ENDPOINT = 'https://console.anthropic.com/v1/oauth/token'
-const REDIRECT_URI = 'https://console.anthropic.com/oauth/code/callback'
+const AUTHORIZATION_ENDPOINT_MAX = 'https://claude.com/cai/oauth/authorize'
+const AUTHORIZATION_ENDPOINT_CONSOLE = 'https://platform.claude.com/oauth/authorize'
+const TOKEN_ENDPOINT = 'https://platform.claude.com/v1/oauth/token'
+const REDIRECT_URI = 'https://platform.claude.com/oauth/code/callback'
 const CREATE_API_KEY_ENDPOINT = 'https://api.anthropic.com/api/oauth/claude_cli/create_api_key'
-const SCOPES = 'org:create_api_key user:profile user:inference'
+const CONSOLE_SCOPES = 'org:create_api_key user:profile'
+const CLAUDE_AI_SCOPES = 'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload'
 
 const DEFAULT_TIMEOUT_MS = 30000
 
@@ -59,12 +60,13 @@ export class AnthropicOAuthClient {
    */
   getAuthorizationUrl(mode, pkce, state) {
     const baseUrl = mode === 'max' ? AUTHORIZATION_ENDPOINT_MAX : AUTHORIZATION_ENDPOINT_CONSOLE
+    const scope = mode === 'max' ? CLAUDE_AI_SCOPES : CONSOLE_SCOPES
     const params = new URLSearchParams({
       code: 'true',
       client_id: this.clientId,
       response_type: 'code',
       redirect_uri: REDIRECT_URI,
-      scope: SCOPES,
+      scope,
       code_challenge: pkce.challenge,
       code_challenge_method: 'S256',
       state: state

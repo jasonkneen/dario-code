@@ -6,7 +6,7 @@
  * task management, todos, plugin management, session resume/export, etc.
  */
 
-import { VERSION, getModel, setModelOverride, loadConfig, saveConfig, getConfigValue, setConfigValue, loadSettings, saveSettings, isFastMode, setFastMode, modelSupportsFastMode, getFastModeModel, getFastModeDisplayName, getConfigDir, getClaudeConfigDir, loadClaudeMd, getDisabledContextItems, isContextItemDisabled, addCustomContextItem, removeCustomContextItem, getCustomContextItems } from '../core/config.mjs'
+import { VERSION, getModel, setModelOverride, loadConfig, saveConfig, getConfigValue, setConfigValue, loadSettings, saveSettings, isFastMode, setFastMode, modelSupportsFastMode, getFastModeModel, getFastModeDisplayName, getConfigDir, getClaudeConfigDir, loadClaudeMd, getDisabledContextItems, isContextItemDisabled, addCustomContextItem, removeCustomContextItem, getCustomContextItems, getApiKey } from '../core/config.mjs'
 import { getAllProviders, getProvider } from '../providers/registry.mjs'
 import { loadProviderConfig, getEnabledModels, setProviderKey, toggleModel, enableProvider, disableProvider } from '../providers/config.mjs'
 import { addMcpServer, removeMcpServer, getAllMcpServers, getSingleMcpServer } from '../integration/mcp.mjs'
@@ -245,7 +245,7 @@ export const authCommand = {
   isHidden: false,
 
   async call(closeOverlay, context) {
-    const apiKey = process.env.ANTHROPIC_API_KEY
+    const apiKey = getApiKey()
     const baseUrl = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com'
 
     // Try to load config for OAuth account info
@@ -258,7 +258,7 @@ export const authCommand = {
     }
 
     const oauthAccount = config.oauthAccount
-    const primaryApiKey = config.primaryApiKey
+    const primaryApiKey = config.primaryApiKey || config.apiKey
 
     let output = `Authentication Status\n`
     output += `${'─'.repeat(52)}\n\n`
@@ -297,7 +297,7 @@ export const authCommand = {
     output += `  2. Run /login to authenticate via OAuth\n`
     output += `\n`
     output += `To use a proxy:\n`
-    output += `  Set ANTHROPIC_BASE_URL and ANTHROPIC_API_KEY in .env`
+      output += `  Set ANTHROPIC_BASE_URL and ANTHROPIC_API_KEY in env or save an API key in config`
 
     return output
   },
@@ -1691,11 +1691,11 @@ export const doctorCommand = {
         hasIssues = true
       }
     } catch {
-      const apiKey = process.env.ANTHROPIC_API_KEY
+      const apiKey = getApiKey()
       if (apiKey) {
-        output += `✓ API key configured via environment\n`
+        output += `✓ API key configured\n`
       } else {
-        output += `✗ No API key or OAuth token - run /auth or set ANTHROPIC_API_KEY\n`
+        output += `✗ No API key or OAuth token - run /auth or set/save ANTHROPIC_API_KEY\n`
         hasIssues = true
       }
     }
@@ -2462,7 +2462,7 @@ export const debugCommand = {
 
     // Auth
     output += `\n  Authentication\n`
-    const apiKey = process.env.ANTHROPIC_API_KEY
+    const apiKey = getApiKey()
     const baseUrl = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com'
     output += `    Method:   ${apiKey ? 'API Key' : 'OAuth/None'}\n`
     output += `    Endpoint: ${baseUrl}\n`

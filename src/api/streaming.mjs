@@ -8,7 +8,7 @@ import { getClientForModel, stripProviderPrefix, getProviderIdForModel } from '.
 import { executeToolUse } from '../tools/executor.mjs'
 import { createMessage } from '../utils/messages.mjs'
 import { formatError } from '../utils/errors.mjs'
-import { isFastMode } from '../core/config.mjs'
+import { isFastMode, loadConfig } from '../core/config.mjs'
 import { StandardRetryStrategy } from './retry.mjs'
 
 // Session-level shared readFileTimestamps so Read → Write/Edit can track across tool calls
@@ -504,7 +504,25 @@ export async function* streamConversation(
       console.error('Stream error (max retries exceeded):', formatError(error))
       throw error
     } else {
-      console.error('Stream error:', formatError(error))
+      const errorText = formatError(error)
+      const config = loadConfig()
+      const usingClaudeSubscriptionOAuth =
+        config.oauthMode === 'claude' &&
+        !config.primaryApiKey &&
+        !config.apiKey &&
+        !process.env.ANTHROPIC_API_KEY
+
+      if (
+        usingClaudeSubscriptionOAuth &&
+        error.status === 400 &&
+        errorText.includes('"type":"invalid_request_error"')
+      ) {
+        throw new Error(
+          'Claude Max/Pro OAuth authenticated successfully, but Anthropic is rejecting direct public API requests from this app. Use Console OAuth or a saved ANTHROPIC_API_KEY instead.'
+        )
+      }
+
+      console.error('Stream error:', errorText)
       throw error
     }
     } // end catch

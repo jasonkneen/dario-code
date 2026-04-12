@@ -4,6 +4,7 @@
  */
 
 import { ApiError, ConfigError } from '../utils/errors.mjs'
+import { getApiKey } from '../core/config.mjs'
 import Anthropic from '@anthropic-ai/sdk'
 import fetch from 'node-fetch'
 import fs from 'fs'
@@ -27,11 +28,19 @@ function setupOAuthToken() {
   const BUFFER_MS = 5 * 60 * 1000 // 5 minute expiry buffer
 
   try {
+    const configPath = path.join(os.homedir(), '.dario', 'config.json')
+    let configMode = null
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+      configMode = config.oauthMode || null
+    }
+
     // 1. Dario token file
     const tokenPath = path.join(os.homedir(), '.dario', 'oauth-token.json')
     if (fs.existsSync(tokenPath)) {
       const tokenData = JSON.parse(fs.readFileSync(tokenPath, 'utf8'))
-      if (tokenData.access_token) {
+      const tokenMode = tokenData.oauth_mode || configMode
+      if (tokenMode === 'claude' && tokenData.access_token) {
         const expiresAt = tokenData.expires || (tokenData.savedAt + 3600000)
         if (Date.now() < expiresAt - BUFFER_MS) {
           process.env.CLAUDE_CODE_OAUTH_TOKEN = tokenData.access_token
@@ -45,10 +54,9 @@ function setupOAuthToken() {
     }
 
     // 2. Dario config
-    const configPath = path.join(os.homedir(), '.dario', 'config.json')
     if (fs.existsSync(configPath)) {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
-      if (config.oauthTokens?.access) {
+      if (config.oauthMode === 'claude' && config.oauthTokens?.access) {
         const expiresAt = config.oauthTokens.expires || 0
         if (Date.now() < expiresAt - BUFFER_MS) {
           process.env.CLAUDE_CODE_OAUTH_TOKEN = config.oauthTokens.access
@@ -220,7 +228,21 @@ function isTokenNearExpiry() {
  */
 export async function getClient() {
   if (!clientInstance) {
-    // Try OAuth first (sync check)
+    // Explicit API keys take precedence over OAuth tokens.
+    // This avoids a stale/broken OAuth login masking a valid key.
+    const apiKey = getApiKey()
+    if (apiKey) {
+      clientInstance = new Anthropic({
+        apiKey,
+        defaultHeaders: {
+          'User-Agent': 'claude-code/1.0',     // DO NOT CHANGE — must identify as Claude Code to Anthropic
+          'X-App-Name': 'claude-code',          // DO NOT CHANGE
+        }
+      })
+      return clientInstance
+    }
+
+    // Try OAuth next (sync check)
     let oauthToken = setupOAuthToken()
 
     // If token needs refresh, do it async
@@ -238,21 +260,10 @@ export async function getClient() {
       return clientInstance
     }
 
-    // Fall back to API key from environment
-    const apiKey = process.env.ANTHROPIC_API_KEY
-    if (!apiKey) {
-      throw new ConfigError(
-        'ANTHROPIC_API_KEY not set. Please add it to your .env file.\n\nOr use /login to authenticate with OAuth.',
-        'ANTHROPIC_API_KEY'
-      )
-    }
-    clientInstance = new Anthropic({
-      apiKey,
-      defaultHeaders: {
-        'User-Agent': 'claude-code/1.0',     // DO NOT CHANGE — must identify as Claude Code to Anthropic
-        'X-App-Name': 'claude-code',          // DO NOT CHANGE
-      }
-    })
+    throw new ConfigError(
+      'ANTHROPIC_API_KEY not set. Please add it to your environment or saved config.\n\nOr use /login to authenticate with OAuth.',
+      'ANTHROPIC_API_KEY'
+    )
   }
   return clientInstance
 }
@@ -296,5 +307,3 @@ export async function sendRequest(messages, options = {}) {
     )
   }
 }
-
-

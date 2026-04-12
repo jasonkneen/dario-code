@@ -798,7 +798,8 @@ export function saveGlobalConfig(config) {
  */
 export function getApiKey() {
   return process.env.ANTHROPIC_API_KEY ||
-         getConfigValue('apiKey')
+         getConfigValue('apiKey') ||
+         getConfigValue('primaryApiKey')
 }
 
 /**

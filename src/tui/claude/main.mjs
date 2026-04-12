@@ -3406,12 +3406,25 @@ function ConversationApp({
         // Show error as assistant message with helpful context
         const errorText = error.message || formatError(error) || 'Unknown error occurred'
 
+        const config = loadConfig()
+        const usingClaudeSubscriptionOAuth =
+          config.oauthMode === 'claude' &&
+          !config.primaryApiKey &&
+          !config.apiKey &&
+          !process.env.ANTHROPIC_API_KEY
+
         let helpText = ''
-        if (errorText.includes('API_KEY') || errorText.includes('authentication')) {
-          helpText = '\n\nPlease set ANTHROPIC_API_KEY in your .env file or run /auth to authenticate with OAuth.'
+        if (usingClaudeSubscriptionOAuth &&
+            errorText.includes('400') &&
+            errorText.includes('"type":"invalid_request_error"')) {
+          helpText = '\n\nClaude Max/Pro OAuth authenticated successfully, but Anthropic is rejecting direct public API requests from this app. Use Console OAuth or a saved ANTHROPIC_API_KEY instead.'
+        } else if (errorText.includes('API_KEY') || errorText.includes('authentication')) {
+          helpText = '\n\nPlease set or save ANTHROPIC_API_KEY, or run /auth to authenticate with OAuth.'
+        } else if (errorText.includes('"type":"permission_error"')) {
+          helpText = '\n\nThe current credential does not have permission for this API path. If you are using Claude Max/Pro OAuth, use Console OAuth or a saved ANTHROPIC_API_KEY instead.'
         } else if (errorText.includes('ENOENT') || errorText.includes('not found')) {
           helpText = '\n\nThe requested file or resource could not be found.'
-        } else if (errorText.includes('EACCES') || errorText.includes('permission')) {
+        } else if (errorText.includes('EACCES')) {
           helpText = '\n\nPermission denied. Check file permissions.'
         } else if (errorText.includes('network') || errorText.includes('ECONNREFUSED')) {
           helpText = '\n\nNetwork error. Check your internet connection.'
@@ -3611,7 +3624,7 @@ function ConversationApp({
               const successMsg = createMessage('assistant', `✓ Successfully authenticated with ${option.name}!\nYou can now use the API.`)
               setMessages(prev => [...prev, successMsg])
             } catch (error) {
-              const errorMsg = createMessage('assistant', `✗ Authentication failed: ${error.message}\n\nAlternatively, set ANTHROPIC_API_KEY in your .env file`)
+              const errorMsg = createMessage('assistant', `✗ Authentication failed: ${error.message}\n\nAlternatively, set or save ANTHROPIC_API_KEY`)
               setMessages(prev => [...prev, errorMsg])
             }
           },

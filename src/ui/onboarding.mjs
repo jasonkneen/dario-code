@@ -67,6 +67,7 @@ export async function initOnboarding(skipPermissions, printMode) {
   // (for users who onboarded before auth selector was added)
   const needsAuthSelection = !config.selectedAuthMethod &&
                              !config.primaryApiKey &&
+                             !config.apiKey &&
                              !config.claudeOAuthToken
 
   // Check if onboarding is needed
