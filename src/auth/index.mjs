@@ -6,6 +6,7 @@
 // OAuth
 export {
   authenticateWithOAuth,
+  authenticateWithOAuth as authenticate,
   getValidToken,
   isOAuthAuthenticated,
   logout,
@@ -19,5 +20,15 @@ export {
 import oauth from './oauth.mjs'
 
 export default {
-  oauth
+  oauth,
+  authenticate: oauth.authenticateWithOAuth,
+  authenticateWithOAuth: oauth.authenticateWithOAuth,
+  getValidToken: oauth.getValidToken,
+  isOAuthAuthenticated: oauth.isOAuthAuthenticated,
+  logout: oauth.logout,
+  getAuthInfo: oauth.getAuthInfo,
+  loadToken: oauth.loadToken,
+  saveToken: oauth.saveToken,
+  deleteToken: oauth.deleteToken,
+  setOAuthMode: oauth.setOAuthMode
 }

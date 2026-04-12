@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useMemo, useRef, memo, Component } from 'react'
-import { Box, Text, render, useInput } from 'ink'
+import { Box, Text, render, useInput, useStdout } from 'ink'
 import { randomUUID } from 'crypto'
 import chalk from 'chalk'
 
@@ -502,8 +502,8 @@ function AuthSelector({ onSelect, onCancel }) {
 // Maximum number of suggestions to show at once
 const MAX_SUGGESTIONS = 20
 const VISIBLE_SUGGESTIONS = 10 // Show 10 at a time, scroll the rest
-const TRANSCRIPT_WINDOW_SIZE = 160
-const TRANSCRIPT_SCROLL_STEP = 40
+const MIN_TRANSCRIPT_WINDOW_SIZE = 8
+const MAX_TRANSCRIPT_WINDOW_SIZE = 40
 
 // Standard slash commands — TUI-only commands that need direct access to TUI context.
 // Commands that exist in localCommands (from commands.mjs) are NOT duplicated here.
@@ -2600,6 +2600,7 @@ function ConversationApp({
   isDefaultModel = true,
 }) {
   const effectiveVerbose = verbose || loadConfig().verbose
+  const { stdout } = useStdout()
 
   // State
   const [forkNumber, setForkNumber] = useState(initialForkNumber)
@@ -3466,14 +3467,23 @@ function ConversationApp({
     [messages]
   )
 
-  const maxTranscriptWindowStart = Math.max(0, normalizedMessages.length - TRANSCRIPT_WINDOW_SIZE)
+  const showWelcomeChrome = normalizedMessages.length === 0 && !isLoading && !initialPrompt
+  const terminalRows = Math.max(20, stdout?.rows || process.stdout.rows || 24)
+  const reservedRows = showWelcomeChrome ? 18 : 8
+  const transcriptWindowSize = Math.max(
+    MIN_TRANSCRIPT_WINDOW_SIZE,
+    Math.min(MAX_TRANSCRIPT_WINDOW_SIZE, terminalRows - reservedRows)
+  )
+  const transcriptScrollStep = Math.max(4, Math.floor(transcriptWindowSize / 2))
+
+  const maxTranscriptWindowStart = Math.max(0, normalizedMessages.length - transcriptWindowSize)
   const clampedTranscriptStart = transcriptWindowStart === null
     ? maxTranscriptWindowStart
     : Math.max(0, Math.min(transcriptWindowStart, maxTranscriptWindowStart))
 
   const visibleTranscriptMessages = normalizedMessages.slice(
     clampedTranscriptStart,
-    clampedTranscriptStart + TRANSCRIPT_WINDOW_SIZE
+    clampedTranscriptStart + transcriptWindowSize
   )
   const hiddenAboveCount = clampedTranscriptStart
   const hiddenBelowCount = Math.max(
@@ -3488,25 +3498,25 @@ function ConversationApp({
         ? maxTranscriptWindowStart
         : Math.max(0, Math.min(prev, maxTranscriptWindowStart))
       if (current <= 0) return 0
-      return Math.max(0, current - TRANSCRIPT_SCROLL_STEP)
+      return Math.max(0, current - transcriptScrollStep)
     })
-  }, [maxTranscriptWindowStart])
+  }, [maxTranscriptWindowStart, transcriptScrollStep])
 
   const pageTranscriptDown = useCallback(() => {
     setTranscriptWindowStart((prev) => {
       if (prev === null) return null
       const current = Math.max(0, Math.min(prev, maxTranscriptWindowStart))
-      const next = current + TRANSCRIPT_SCROLL_STEP
+      const next = current + transcriptScrollStep
       return next >= maxTranscriptWindowStart ? null : next
     })
-  }, [maxTranscriptWindowStart])
+  }, [maxTranscriptWindowStart, transcriptScrollStep])
 
   const jumpTranscriptToLatest = useCallback(() => {
     setTranscriptWindowStart(null)
   }, [])
 
   return React.createElement(Box, { flexDirection: 'column' },
-    React.createElement(Box, {
+    showWelcomeChrome && React.createElement(Box, {
       flexDirection: 'column',
       key: `logo${forkNumber}`
     },

@@ -14,29 +14,47 @@ import {
   hasPermissionsToUseTool,
   executeToolUse
 } from '../src/tools/executor.mjs'
-import { loadSettings, saveSettings } from '../src/core/config.mjs'
+import { loadSettings, saveSettings, setSettingSources } from '../src/core/config.mjs'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
 const SETTINGS_PATH = path.join(os.homedir(), '.dario', 'settings.json')
+const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json')
 // Legacy path — tested for migration
 const LEGACY_APPROVED_TOOLS_PATH = path.join(os.homedir(), '.dario', 'approved-tools.json')
 
 describe('Permission System', () => {
   let originalSettings = null
+  let originalClaudeSettings = null
 
   beforeEach(() => {
-    // Save original settings.json
+    setSettingSources(['user'])
+
+    // Save original settings.json files
     try {
       originalSettings = fs.readFileSync(SETTINGS_PATH, 'utf-8')
     } catch {
       originalSettings = null
     }
-    // Clear permissions for a clean slate
+    try {
+      originalClaudeSettings = fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf-8')
+    } catch {
+      originalClaudeSettings = null
+    }
+
+    // Clear Dario permissions for a clean slate
     const settings = loadSettings()
     settings.permissions = { allow: [], deny: [], ask: [] }
     saveSettings(settings)
+
+    // Clear Claude user permissions too, since loadSettings() merges both
+    const claudeDir = path.dirname(CLAUDE_SETTINGS_PATH)
+    fs.mkdirSync(claudeDir, { recursive: true })
+    const claudeSettings = originalClaudeSettings ? JSON.parse(originalClaudeSettings) : {}
+    claudeSettings.permissions = { allow: [], deny: [], ask: [] }
+    fs.writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(claudeSettings, null, 2), 'utf-8')
+
     // Remove legacy file if present
     try { fs.unlinkSync(LEGACY_APPROVED_TOOLS_PATH) } catch { /* ignore */ }
   })
@@ -55,6 +73,19 @@ describe('Permission System', () => {
     } catch {
       // ignore
     }
+
+    try {
+      if (originalClaudeSettings !== null) {
+        fs.writeFileSync(CLAUDE_SETTINGS_PATH, originalClaudeSettings, 'utf-8')
+      } else {
+        fs.unlinkSync(CLAUDE_SETTINGS_PATH)
+      }
+    } catch {
+      // ignore
+    }
+
+    setSettingSources(null)
+
     // Clean up legacy file if created during test
     try { fs.unlinkSync(LEGACY_APPROVED_TOOLS_PATH) } catch { /* ignore */ }
   })
