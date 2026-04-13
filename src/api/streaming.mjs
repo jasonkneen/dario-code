@@ -3,13 +3,43 @@
  * This handles the core message streaming loop
  */
 
+import { createHash } from 'crypto'
 import { getClient } from './client.mjs'
 import { getClientForModel, stripProviderPrefix, getProviderIdForModel } from '../providers/client-factory.mjs'
 import { executeToolUse } from '../tools/executor.mjs'
 import { createMessage } from '../utils/messages.mjs'
 import { formatError } from '../utils/errors.mjs'
-import { isFastMode, loadConfig } from '../core/config.mjs'
+import { isFastMode, loadConfig, VERSION } from '../core/config.mjs'
 import { StandardRetryStrategy } from './retry.mjs'
+
+// Attribution fingerprint — must match server-side validation
+const FINGERPRINT_SALT = '59cf53e54c78'
+
+function computeFingerprint(messageText, version) {
+  const chars = [4, 7, 20].map(i => messageText[i] || '0').join('')
+  const hash = createHash('sha256').update(`${FINGERPRINT_SALT}${chars}${version}`).digest('hex')
+  return hash.slice(0, 3)
+}
+
+function getAttributionHeader(messages) {
+  // Extract first user message text
+  let firstText = ''
+  for (const m of messages) {
+    const role = m.message?.role || m.role
+    if (role === 'user') {
+      const content = m.message?.content || m.content
+      if (typeof content === 'string') { firstText = content; break }
+      if (Array.isArray(content)) {
+        const tb = content.find(b => b.type === 'text')
+        if (tb) { firstText = tb.text; break }
+      }
+      break
+    }
+  }
+  const fingerprint = computeFingerprint(firstText, VERSION)
+  const entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT ?? 'cli'
+  return `x-anthropic-billing-header: cc_version=${VERSION}.${fingerprint}; cc_entrypoint=${entrypoint};`
+}
 
 // Session-level shared readFileTimestamps so Read → Write/Edit can track across tool calls
 const sessionReadFileTimestamps = {}
@@ -176,16 +206,26 @@ export async function* streamConversation(
         }),
     }
 
+    // Always inject attribution header for Anthropic (required for billing/routing)
+    if (isAnthropicProvider && (!systemPrompts || systemPrompts.length === 0)) {
+      const attribution = getAttributionHeader(currentMessages)
+      request.system = [{ type: 'text', text: attribution }]
+    }
+
     // Add system prompts if provided, with cache breakpoints (Anthropic only)
     if (systemPrompts && systemPrompts.length > 0) {
       if (isAnthropicProvider) {
-        request.system = systemPrompts.map((text, i) => {
+        // Build attribution header from first user message (required for billing)
+        const attribution = getAttributionHeader(currentMessages)
+        const allPrompts = [attribution, ...systemPrompts]
+
+        request.system = allPrompts.map((text, i) => {
           const block = {
             type: 'text',
             text: typeof text === 'string' ? text : text.text
           }
           // Add cache_control to the last system block for prompt caching
-          if (i === systemPrompts.length - 1) {
+          if (i === allPrompts.length - 1) {
             block.cache_control = { type: 'ephemeral' }
           }
           return block

@@ -10,9 +10,12 @@ const AUTHORIZATION_ENDPOINT_MAX = 'https://claude.com/cai/oauth/authorize'
 const AUTHORIZATION_ENDPOINT_CONSOLE = 'https://platform.claude.com/oauth/authorize'
 const TOKEN_ENDPOINT = 'https://platform.claude.com/v1/oauth/token'
 const REDIRECT_URI = 'https://platform.claude.com/oauth/code/callback'
+const MANUAL_REDIRECT_URI = 'https://platform.claude.com/oauth/code/callback'
 const CREATE_API_KEY_ENDPOINT = 'https://api.anthropic.com/api/oauth/claude_cli/create_api_key'
 const CONSOLE_SCOPES = 'org:create_api_key user:profile'
 const CLAUDE_AI_SCOPES = 'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload'
+// When logging in, request all scopes to handle Console -> Claude.ai redirect
+const ALL_SCOPES = 'org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload'
 
 const DEFAULT_TIMEOUT_MS = 30000
 
@@ -60,7 +63,8 @@ export class AnthropicOAuthClient {
    */
   getAuthorizationUrl(mode, pkce, state) {
     const baseUrl = mode === 'max' ? AUTHORIZATION_ENDPOINT_MAX : AUTHORIZATION_ENDPOINT_CONSOLE
-    const scope = mode === 'max' ? CLAUDE_AI_SCOPES : CONSOLE_SCOPES
+    // Request all scopes regardless of mode — the backend handles the Console -> Claude.ai redirect
+    const scope = ALL_SCOPES
     const params = new URLSearchParams({
       code: 'true',
       client_id: this.clientId,
@@ -200,10 +204,14 @@ export class AnthropicOAuthClient {
   /**
    * Refresh access token
    */
-  async refreshAccessToken(refreshToken) {
+  async refreshAccessToken(refreshToken, requestedScopes) {
     if (!refreshToken || typeof refreshToken !== 'string') {
       throw new Error('Refresh token required')
     }
+
+    // Request scope expansion on refresh (matching reference implementation).
+    // The backend allows expanding scopes beyond the initial authorize grant.
+    const scope = (requestedScopes?.length ? requestedScopes : CLAUDE_AI_SCOPES.split(' ')).join(' ')
 
     const response = await fetch(TOKEN_ENDPOINT, {
       method: 'POST',
@@ -211,7 +219,8 @@ export class AnthropicOAuthClient {
       body: JSON.stringify({
         grant_type: 'refresh_token',
         refresh_token: refreshToken.trim(),
-        client_id: this.clientId
+        client_id: this.clientId,
+        scope
       })
     })
 

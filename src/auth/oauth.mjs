@@ -14,7 +14,7 @@ import { AnthropicOAuthClient } from './oauth-client.mjs'
 // Base config
 const BASE_CONFIG = {
   REDIRECT_PORT: 54545,
-  MANUAL_REDIRECT_URL: '/oauth/code/callback',
+  MANUAL_REDIRECT_URL: 'https://platform.claude.com/oauth/code/callback',
   SCOPES: ['org:create_api_key', 'user:profile']
 }
 
@@ -31,7 +31,7 @@ const ANTHROPIC_CONFIG = {
 // Claude Max/Pro OAuth (zero-cost inference)
 const CLAUDE_MAX_CONFIG = {
   REDIRECT_PORT: 54545,
-  MANUAL_REDIRECT_URL: '/oauth/code/callback',
+  MANUAL_REDIRECT_URL: 'https://platform.claude.com/oauth/code/callback',
   SCOPES: ['user:profile', 'user:inference', 'user:sessions:claude_code', 'user:mcp_servers', 'user:file_upload'],
   AUTHORIZE_URL: 'https://claude.com/cai/oauth/authorize',
   TOKEN_URL: 'https://platform.claude.com/v1/oauth/token',

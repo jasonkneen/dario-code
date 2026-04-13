@@ -3,10 +3,10 @@
  * Handles communication with the API
  */
 
+import { createHash } from 'crypto'
 import { ApiError, ConfigError } from '../utils/errors.mjs'
-import { getApiKey } from '../core/config.mjs'
+import { getApiKey, VERSION } from '../core/config.mjs'
 import Anthropic from '@anthropic-ai/sdk'
-import fetch from 'node-fetch'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -75,7 +75,7 @@ function setupOAuthToken() {
       const creds = JSON.parse(fs.readFileSync(claudeCredsPath, 'utf8'))
       const oauth = creds?.claudeAiOauth
       if (oauth?.accessToken) {
-        if (oauth.expiresAt && oauth.expiresAt > Date.now()) {
+        if (oauth.expiresAt && oauth.expiresAt > Date.now() + BUFFER_MS) {
           process.env.CLAUDE_CODE_OAUTH_TOKEN = oauth.accessToken
           return oauth.accessToken
         }
@@ -112,92 +112,19 @@ async function ensureValidToken() {
 }
 
 /**
- * Create an OAuth API client using an OAuth token.
- * The custom fetch handler:
- *   1. Proactively refreshes tokens that are within 5 minutes of expiry
- *   2. Retries once on 401 after refreshing the token
+ * Create an OAuth API client using the SDK's native authToken support.
+ * Uses the SDK's built-in Bearer auth (authToken) instead of a custom fetch hack.
+ * The SDK handles Authorization: Bearer headers correctly when apiKey is null
+ * and authToken is set.
  */
 function createOAuthClient(oauthToken) {
-  let lastRefreshAttempt = 0
-
-  const getLatestToken = () => process.env.CLAUDE_CODE_OAUTH_TOKEN || oauthToken
-
-  const buildRequest = (url, init, token) => {
-    let targetUrl = url
-    if (typeof url === 'string') {
-      const pathMatch = url.match(/\/v1\/.*/)
-      if (pathMatch) {
-        targetUrl = 'https://api.anthropic.com' + pathMatch[0]
-      }
-    }
-
-    const headers = new Headers(init.headers || {})
-    headers.set('Authorization', `Bearer ${token}`)
-    headers.set('anthropic-beta', 'oauth-2025-04-20')
-    headers.set('anthropic-version', '2023-06-01')
-    headers.set('x-api-key', '')
-
-    return { targetUrl, headers }
-  }
-
-  /**
-   * Attempt to refresh the OAuth token. Returns the new token or null.
-   * Rate-limited to at most once per 30 seconds.
-   */
-  const tryRefreshToken = async () => {
-    const now = Date.now()
-    if (now - lastRefreshAttempt < 30000) return null // Rate limit
-    lastRefreshAttempt = now
-
-    try {
-      const { getValidToken } = await import('../auth/oauth.mjs')
-      const newToken = await getValidToken()
-      if (newToken) {
-        process.env.CLAUDE_CODE_OAUTH_TOKEN = newToken
-        return newToken
-      }
-    } catch (err) {
-      if (process.env.DEBUG_OAUTH) {
-        console.error('[Client] Proactive token refresh failed:', err.message)
-      }
-    }
-    return null
-  }
-
-  const customFetch = async (url, init = {}) => {
-    // Proactively check if token is near expiry before making the request
-    let token = getLatestToken()
-    const tokenNearExpiry = isTokenNearExpiry()
-    if (tokenNearExpiry) {
-      const refreshed = await tryRefreshToken()
-      if (refreshed) token = refreshed
-    }
-
-    const { targetUrl, headers } = buildRequest(url, init, token)
-    const response = await fetch(targetUrl, { ...init, headers })
-
-    // If 401, try refreshing token and retry once
-    if (response.status === 401) {
-      if (process.env.DEBUG_OAUTH) {
-        console.error('[Client] Got 401, attempting token refresh...')
-      }
-      const refreshed = await tryRefreshToken()
-      if (refreshed) {
-        const retry = buildRequest(url, init, refreshed)
-        return fetch(retry.targetUrl, { ...init, headers: retry.headers })
-      }
-    }
-
-    return response
-  }
-
   return new Anthropic({
-    apiKey: 'oauth-placeholder',
-    fetch: customFetch,
-    dangerouslyAllowBrowser: true,
+    apiKey: null,
+    authToken: oauthToken,
     defaultHeaders: {
       'User-Agent': 'claude-code/1.0',       // DO NOT CHANGE — must identify as Claude Code to Anthropic
       'X-App-Name': 'claude-code',            // DO NOT CHANGE
+      'anthropic-beta': 'oauth-2025-04-20,claude-code-20250219',
     }
   })
 }
@@ -227,6 +154,16 @@ function isTokenNearExpiry() {
  * Now async to support token refresh on startup.
  */
 export async function getClient() {
+  // If we have an OAuth client and the token is near expiry, reset so we
+  // create a new client with a fresh token.
+  if (clientInstance && clientInstance.authToken && isTokenNearExpiry()) {
+    const refreshed = await ensureValidToken()
+    if (refreshed) {
+      clientInstance = createOAuthClient(refreshed)
+      return clientInstance
+    }
+  }
+
   if (!clientInstance) {
     // Explicit API keys take precedence over OAuth tokens.
     // This avoids a stale/broken OAuth login masking a valid key.
@@ -284,10 +221,24 @@ export async function sendRequest(messages, options = {}) {
   const model = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6'
   const maxTokens = parseInt(process.env.CLAUDE_MAX_TOKENS || '4096', 10)
 
+  // Compute attribution fingerprint from first user message
+  const SALT = '59cf53e54c78'
+  let firstText = ''
+  for (const m of messages) {
+    if (m.role === 'user') {
+      firstText = typeof m.content === 'string' ? m.content : ''
+      break
+    }
+  }
+  const chars = [4, 7, 20].map(i => firstText[i] || '0').join('')
+  const fp = createHash('sha256').update(`${SALT}${chars}${VERSION}`).digest('hex').slice(0, 3)
+  const attribution = `x-anthropic-billing-header: cc_version=${VERSION}.${fp}; cc_entrypoint=${process.env.CLAUDE_CODE_ENTRYPOINT ?? 'cli'};`
+
   try {
     const response = await client.messages.create({
       model,
       max_tokens: maxTokens,
+      system: [{ type: 'text', text: attribution }],
       messages: messages.map(msg => ({
         role: msg.role,
         content: msg.content

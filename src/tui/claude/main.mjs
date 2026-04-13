@@ -2641,7 +2641,7 @@ function ConversationApp({
   const [fastMode, setFastModeState] = useState(isFastMode())
   const [bypassPermissions, setBypassPermissions] = useState(false)
   const [currentModel, setCurrentModel] = useState(
-    loadConfig().model || 'claude-sonnet-4-6'
+    process.env.CLAUDE_MODEL || loadConfig().model || 'claude-sonnet-4-6'
   )
   const [contextPercent, setContextPercent] = useState(0)
 
